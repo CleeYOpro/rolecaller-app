@@ -1,0 +1,9 @@
+node_modules
+.git
+.expo
+.expo-shared
+AppData
+*.tmp
+*.log
+dist
+build
