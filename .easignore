@@ -7,3 +7,4 @@ AppData
 *.log
 dist
 build
+/android
