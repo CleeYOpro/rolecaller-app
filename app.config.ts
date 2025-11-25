@@ -22,6 +22,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         adaptiveIcon: {
             backgroundColor: "#E6F4FE"
         },
+        splash: {
+            image: "./assets/splash.png",
+            resizeMode: "contain",
+            backgroundColor: "#ffffff"
+        },
         edgeToEdgeEnabled: true,
         predictiveBackGestureEnabled: false,
         package: "com.cleo.schoolattendance"
