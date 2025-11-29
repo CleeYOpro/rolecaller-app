@@ -47,7 +47,7 @@ export default function TeacherDashboard() {
         }
     }, [classId, schoolId]);
 
-    // Fetch all students and classes for search view
+    // Fetch all students of the school
     useEffect(() => {
         if (schoolId) {
             attendanceService.getAllStudents(schoolId)
