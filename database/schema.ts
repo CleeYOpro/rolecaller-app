@@ -12,7 +12,7 @@ export const schools = pgTable('schools', {
 });
 
 export const classes = pgTable('classes', {
-    id: text('id').primaryKey(), // 5-digit number
+    id: uuid('id').primaryKey().defaultRandom(), // UUID for class IDs
     schoolId: uuid('school_id').references(() => schools.id).notNull(),
     name: text('name').notNull(),
     createdAt: timestamp('created_at').defaultNow(),
@@ -20,17 +20,17 @@ export const classes = pgTable('classes', {
 
 export const students = pgTable('students', {
     id: uuid('id').primaryKey().defaultRandom(),
-    classId: text('class_id').references(() => classes.id).notNull(),
+    classId: uuid('class_id').references(() => classes.id).notNull(), // UUID reference to classes
     schoolId: uuid('school_id').references(() => schools.id).notNull(),
     name: text('name').notNull(),
-    grade: text('grade').notNull(),
+    grade: text('grade').notNull(), // Changed from roll_number to grade
     createdAt: timestamp('created_at').defaultNow(),
 });
 
 export const attendance = pgTable('attendance', {
     id: uuid('id').primaryKey().defaultRandom(),
     studentId: uuid('student_id').references(() => students.id).notNull(),
-    classId: text('class_id').references(() => classes.id).notNull(),
+    classId: uuid('class_id').references(() => classes.id).notNull(), // UUID reference to classes
     status: attendanceStatusEnum('status').notNull(),
     date: date('date').notNull(),
     updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => new Date()),

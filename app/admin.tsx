@@ -1,12 +1,10 @@
 import { AttendanceMap, AttendanceStatus, Class, Student } from '@/constants/types';
 import { api } from '@/services/api';
-import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import StudentSearchOverview from './components/StudentSearchOverview';
 
 export default function Admin() {
@@ -16,6 +14,7 @@ export default function Admin() {
     const [classes, setClasses] = useState<Class[]>([]);
     const [students, setStudents] = useState<Student[]>([]);
     const [attendance, setAttendance] = useState<AttendanceMap>({});
+    const [schoolName, setSchoolName] = useState<string>("");
 
     const [activeTab, setActiveTab] = useState<'view' | 'manage'>('view');
     const [manageSubTab, setManageSubTab] = useState<'classes' | 'students'>('classes');
@@ -53,6 +52,7 @@ export default function Admin() {
                 console.log("Fetched schools:", schools);
                 if (schools.length > 0) {
                     const schoolId = schools[0].id;
+                    setSchoolName(schools[0].name);
                     const cls = await api.getClasses(schoolId);
                     setClasses(cls);
                     if (cls.length > 0) {
@@ -61,13 +61,11 @@ export default function Admin() {
                         setClassId(currentClassId);
                         setSelectedClass(currentClass);
                     } else {
+                        // Instead of showing an alert and returning, we'll just set empty classes
+                        // This allows the admin to access the portal and create classes
                         console.warn("No classes found");
-                        Alert.alert(
-                            "No Classes Found",
-                            "No classes are available. Please create a class first.",
-                            [{ text: "OK" }]
-                        );
-                        return;
+                        setClassId(null);
+                        setSelectedClass(null);
                     }
                 } else {
                     console.warn("No schools found");
@@ -80,18 +78,21 @@ export default function Admin() {
                 }
             }
 
-            if (!currentClassId || !currentClass) return;
+            // Only fetch students and attendance if we have a valid class
+            if (currentClassId && currentClass) {
+                // Use classId's schoolId for student queries
+                // FETCH ALL STUDENTS for the school, not just for one class
+                const studs = await api.getStudents(currentClass.schoolId);
+                setStudents(studs);
 
-            // Use classId's schoolId for student queries
-            const studs = await api.getStudents(currentClass.schoolId, currentClassId);
-            setStudents(studs);
-
-            const attMap: AttendanceMap = {};
-            for (const c of classes) {
-                const att = await api.getAllAttendance(c.id);
-                attMap[c.id] = att;
+                // Get attendance for all classes (including any new ones)
+                const attMap: AttendanceMap = {};
+                for (const c of classes) {
+                    const att = await api.getAllAttendance(c.id);
+                    attMap[c.id] = att;
+                }
+                setAttendance(attMap);
             }
-            setAttendance(attMap);
         } catch (err) {
             console.error("Failed to fetch admin data", err);
             Alert.alert(
@@ -202,7 +203,7 @@ export default function Admin() {
             return;
         }
 
-        const cls = classes.find(c => c.name === studentClass);
+        const cls = classes.find(c => c.id === studentClass);
         const classId = cls?.id;
 
         try {
@@ -286,13 +287,18 @@ export default function Admin() {
             }
 
             const studentsToUpload = [];
+            const classNames = new Set<string>(); // To track unique class names from CSV
+
             for (let i = 1; i < lines.length; i++) {
                 const line = lines[i].trim();
                 if (!line) continue;
                 const values = line.split(',').map(v => v.trim());
                 if (values.length < 2) continue;
 
-                const student: any = { schoolId: selectedClass.schoolId };
+                const student: any = {
+                    schoolId: selectedClass.schoolId,
+                };
+
                 headers.forEach((h, idx) => {
                     if (values[idx]) {
                         if (h === 'number') {
@@ -303,12 +309,46 @@ export default function Admin() {
                     }
                 });
 
+                // Track class names for automatic creation
+                if (student.class) {
+                    classNames.add(student.class);
+                }
+
                 if (student.name && student.id) {
                     studentsToUpload.push(student);
                 }
             }
 
             if (studentsToUpload.length > 0) {
+                // Create a mapping of class names to class IDs
+                const classMapping: Record<string, string> = {};
+
+                // Create classes that don't exist yet
+                for (const className of Array.from(classNames)) {
+                    const existingClass = classes.find(c => c.name.toLowerCase() === className.toLowerCase());
+                    if (existingClass) {
+                        classMapping[className] = existingClass.id;
+                    } else {
+                        // Create new class
+                        try {
+                            const newClass = await api.addClass(className, selectedClass.schoolId);
+                            classMapping[className] = newClass.id;
+                        } catch (err) {
+                            console.error(`Failed to create class: ${className}`, err);
+                        }
+                    }
+                }
+
+                // Assign class IDs to students
+                for (const student of studentsToUpload) {
+                    if (student.class && classMapping[student.class]) {
+                        student.classId = classMapping[student.class];
+                    } else {
+                        // Default to selected class if no class specified or creation failed
+                        student.classId = selectedClass.id;
+                    }
+                }
+
                 await api.uploadStudents(studentsToUpload);
                 setUploadMessage(`✅ Success! Uploaded ${studentsToUpload.length} students`);
                 refreshData();
@@ -357,82 +397,51 @@ export default function Admin() {
         }
     };
 
-    if (!classId) {
-        return (
-            <View style={styles.container}>
-                <StatusBar style="light" />
-                <ActivityIndicator size="large" color="#3A86FF" style={{ marginTop: 100 }} />
-            </View>
-        );
-    }
-
     return (
         <View style={styles.container}>
-            <StatusBar style="light" />
             <View style={styles.mainWrapper}>
-                {/* Header */}
                 <View style={styles.header}>
                     <View>
                         <Text style={styles.headerTitle}>Admin Dashboard</Text>
-                        <Text style={styles.headerSubtitle}>
-                            {selectedClass ? `Class: ${selectedClass.name} (ID: ${selectedClass.id})` : 'Manage classes, students, and attendance'}
-                        </Text>
+                        {schoolName ? <Text style={styles.headerSubtitle}>{schoolName}</Text> : null}
                     </View>
-                    <TouchableOpacity onPress={handleSignOut} style={styles.signOutButton}>
+                    <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
                         <Text style={styles.signOutText}>Sign Out</Text>
                     </TouchableOpacity>
                 </View>
 
-                {/* Tabs */}
                 <View style={styles.tabContainer}>
                     <TouchableOpacity
                         style={[styles.tab, activeTab === 'view' && styles.activeTab]}
                         onPress={() => setActiveTab('view')}
                     >
-                        <Text style={[styles.tabText, activeTab === 'view' && styles.activeTabText]}>View Records</Text>
+                        <Text style={[styles.tabText, activeTab === 'view' && styles.activeTabText]}>
+                            View Attendance
+                        </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={[styles.tab, activeTab === 'manage' && styles.activeTab]}
                         onPress={() => setActiveTab('manage')}
                     >
-                        <Text style={[styles.tabText, activeTab === 'manage' && styles.activeTabText]}>Manage</Text>
+                        <Text style={[styles.tabText, activeTab === 'manage' && styles.activeTabText]}>
+                            Manage Data
+                        </Text>
                     </TouchableOpacity>
                 </View>
 
-                <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 40 }}>
-                    {activeTab === 'view' && (
-                        <View style={styles.section}>
-                            {/* Summary Cards */}
-                            <Text style={styles.sectionTitle}>Today&apos;s Attendance Summary</Text>
-                            <View style={styles.statsGrid}>
-                                <View style={styles.statCard}>
-                                    <Text style={[styles.statValue, { color: '#4CAF50' }]}>{dailyAttendanceSummary.present}</Text>
-                                    <Text style={styles.statLabel}>Present</Text>
-                                </View>
-                                <View style={styles.statCard}>
-                                    <Text style={[styles.statValue, { color: '#ED6C02' }]}>{dailyAttendanceSummary.late}</Text>
-                                    <Text style={styles.statLabel}>Late</Text>
-                                </View>
-                                <View style={styles.statCard}>
-                                    <Text style={[styles.statValue, { color: '#D32F2F' }]}>{dailyAttendanceSummary.absent}</Text>
-                                    <Text style={styles.statLabel}>Absent</Text>
-                                </View>
-                            </View>
-
-                            {/* Student Search & Attendance Overview */}
-                            <StudentSearchOverview
-                                students={students}
-                                classes={classes}
-                                classId={classId || ''}
-                                onStudentUpdate={(updatedStudent) => {
-                                    setStudents((prev) => prev.map((s) => s.id === updatedStudent.id ? updatedStudent : s));
-                                }}
-                            />
-                        </View>
-                    )}
-
-                    {activeTab === 'manage' && (
-                        <View style={styles.section}>
+                <View style={styles.content}>
+                    {activeTab === 'view' ? (
+                        <StudentSearchOverview
+                            students={students}
+                            classes={classes}
+                            classId={classId || ''}
+                            onStudentUpdate={(updated) => {
+                                setStudents(prev => prev.map(s => s.id === updated.id ? updated : s));
+                            }}
+                            refreshData={refreshData}
+                        />
+                    ) : (
+                        <ScrollView>
                             <View style={styles.subTabContainer}>
                                 <TouchableOpacity
                                     style={[styles.subTab, manageSubTab === 'classes' && styles.activeSubTab]}
@@ -449,84 +458,60 @@ export default function Admin() {
                             </View>
 
                             {manageSubTab === 'classes' ? (
-                                <View>
+                                <>
                                     <View style={styles.formCard}>
                                         <Text style={styles.formTitle}>Add New Class</Text>
-                                        <View style={styles.row}>
-                                            <TextInput
-                                                style={[styles.input, { flex: 1, marginBottom: 0 }]}
-                                                placeholder="Class name (e.g., Grade 5A)"
-                                                placeholderTextColor="#888"
-                                                value={newClassName}
-                                                onChangeText={setNewClassName}
-                                            />
-                                            <TouchableOpacity style={styles.addButton} onPress={addClass}>
-                                                <Text style={styles.addButtonText}>Add Class</Text>
-                                            </TouchableOpacity>
+                                        <TextInput
+                                            style={styles.input}
+                                            placeholder="Class Name"
+                                            placeholderTextColor="#888"
+                                            value={newClassName}
+                                            onChangeText={setNewClassName}
+                                        />
+                                        <TouchableOpacity style={styles.addButtonFull} onPress={addClass}>
+                                            <Text style={styles.addButtonText}>Add Class</Text>
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    <View style={styles.section}>
+                                        <Text style={styles.sectionTitle}>Existing Classes</Text>
+                                        <View style={styles.listContainer}>
+                                            {classes.map((cls) => (
+                                                <View key={cls.id} style={styles.listItem}>
+                                                    <View>
+                                                        <Text style={styles.listItemTitle}>{cls.name}</Text>
+                                                    </View>
+                                                    <TouchableOpacity
+                                                        style={styles.deleteButton}
+                                                        onPress={() => deleteClass(cls.id)}
+                                                    >
+                                                        <Text style={styles.buttonText}>Delete</Text>
+                                                    </TouchableOpacity>
+                                                </View>
+                                            ))}
+                                            {classes.length === 0 && (
+                                                <Text style={styles.emptyText}>No classes created yet</Text>
+                                            )}
                                         </View>
                                     </View>
-
-                                    <View style={styles.listContainer}>
-                                        {classes.map(cls => (
-                                            <View key={cls.id} style={styles.listItem}>
-                                                <View>
-                                                    <Text style={styles.listItemTitle}>{cls.name}</Text>
-                                                    <Text style={styles.listItemSubtitle}>{students.filter(s => s.classId === cls.id).length} students</Text>
-                                                </View>
-                                                <TouchableOpacity onPress={() => deleteClass(cls.id)}>
-                                                    <Ionicons name="trash-outline" size={20} color="#D32F2F" />
-                                                </TouchableOpacity>
-                                            </View>
-                                        ))}
-                                    </View>
-                                </View>
+                                </>
                             ) : (
-                                <View>
-                                    {/* CSV Upload Section */}
-                                    <View style={styles.formCard}>
-                                        <Text style={styles.formTitle}>Upload Students via CSV</Text>
-                                        <Text style={styles.helperText}>
-                                            CSV must contain columns: name, number (5 digits), grade, class
-                                        </Text>
-                                        <TouchableOpacity
-                                            style={styles.uploadButton}
-                                            onPress={handleUploadCSV}
-                                            disabled={uploading}
-                                        >
-                                            {uploading ? (
-                                                <ActivityIndicator color="#FFF" />
-                                            ) : (
-                                                <>
-                                                    <Ionicons name="cloud-upload-outline" size={24} color="#FFF" style={{ marginRight: 8 }} />
-                                                    <Text style={styles.addButtonText}>Upload CSV</Text>
-                                                </>
-                                            )}
-                                        </TouchableOpacity>
-                                        {uploadMessage && (
-                                            <View style={[styles.uploadMessageContainer, uploadMessage.startsWith('✅') ? styles.successMessage : styles.errorMessage]}>
-                                                <Text style={styles.uploadMessageText}>{uploadMessage}</Text>
-                                            </View>
-                                        )}
-                                    </View>
-
-                                    {/* Add Student Form */}
+                                <>
                                     <View style={styles.formCard}>
                                         <Text style={styles.formTitle}>Add New Student</Text>
                                         <TextInput
                                             style={styles.input}
-                                            placeholder="Student name"
+                                            placeholder="Student Name"
                                             placeholderTextColor="#888"
                                             value={studentName}
                                             onChangeText={setStudentName}
                                         />
                                         <TextInput
                                             style={styles.input}
-                                            placeholder="5-digit ID"
+                                            placeholder="Student ID"
                                             placeholderTextColor="#888"
                                             value={studentId}
                                             onChangeText={setStudentId}
-                                            keyboardType="numeric"
-                                            maxLength={5}
                                         />
                                         <TextInput
                                             style={styles.input}
@@ -535,122 +520,119 @@ export default function Admin() {
                                             value={studentGrade}
                                             onChangeText={setStudentGrade}
                                         />
-                                        <TextInput
-                                            style={styles.input}
-                                            placeholder="Class name (optional)"
-                                            placeholderTextColor="#888"
-                                            value={studentClass}
-                                            onChangeText={setStudentClass}
-                                        />
+                                        <View style={styles.pickerContainer}>
+                                            <Picker
+                                                selectedValue={studentClass}
+                                                style={styles.picker}
+                                                onValueChange={(itemValue) => setStudentClass(itemValue)}
+                                                dropdownIconColor="#888"
+                                            >
+                                                <Picker.Item label="Select Class" value="" color="#888" />
+                                                {classes.map((cls) => (
+                                                    <Picker.Item key={cls.id} label={cls.name} value={cls.id} />
+                                                ))}
+                                            </Picker>
+                                        </View>
                                         <TouchableOpacity style={styles.addButtonFull} onPress={addStudent}>
                                             <Text style={styles.addButtonText}>Add Student</Text>
                                         </TouchableOpacity>
                                     </View>
 
-                                    {/* Editable Students Table */}
-                                    <View style={styles.tableContainer}>
-                                        <Text style={styles.formTitle}>All Students ({students.length})</Text>
-                                        <View style={styles.tableHeader}>
-                                            <Text style={[styles.tableHeaderText, { flex: 1 }]}>ID</Text>
-                                            <Text style={[styles.tableHeaderText, { flex: 2 }]}>Name</Text>
-                                            <Text style={[styles.tableHeaderText, { flex: 1 }]}>Grade</Text>
-                                            <Text style={[styles.tableHeaderText, { flex: 2 }]}>Class</Text>
-                                            <Text style={[styles.tableHeaderText, { flex: 2 }]}>Actions</Text>
-                                        </View>
-                                        {students.map((student) => {
-                                            const isEditing = editingStudentId === student.id;
-                                            const studentClass = classes.find(c => c.id === student.classId);
-
-                                            return (
-                                                <View key={student.id} style={styles.tableRow}>
-                                                    <Text style={[styles.tableCell, { flex: 1 }]}>{student.id}</Text>
-                                                    <View style={{ flex: 2 }}>
-                                                        {isEditing ? (
-                                                            <TextInput
-                                                                style={styles.tableInput}
-                                                                value={editForm.name}
-                                                                onChangeText={(text) => setEditForm({ ...editForm, name: text })}
-                                                            />
-                                                        ) : (
-                                                            <Text style={styles.tableCell}>{student.name}</Text>
-                                                        )}
-                                                    </View>
-                                                    <View style={{ flex: 1 }}>
-                                                        {isEditing ? (
-                                                            <TextInput
-                                                                style={styles.tableInput}
-                                                                value={editForm.grade}
-                                                                onChangeText={(text) => setEditForm({ ...editForm, grade: text })}
-                                                            />
-                                                        ) : (
-                                                            <Text style={styles.tableCell}>{student.grade || '-'}</Text>
-                                                        )}
-                                                    </View>
-                                                    <View style={{ flex: 2 }}>
-                                                        {isEditing ? (
-                                                            <View style={styles.pickerContainer}>
-                                                                <Picker
-                                                                    selectedValue={editForm.classId}
-                                                                    onValueChange={(itemValue) => setEditForm({ ...editForm, classId: itemValue })}
-                                                                    style={styles.picker}
-                                                                >
-                                                                    <Picker.Item label="Select Class" value="" />
-                                                                    {classes.map((cls) => (
-                                                                        <Picker.Item key={cls.id} label={cls.name} value={cls.id} />
-                                                                    ))}
-                                                                </Picker>
-                                                            </View>
-                                                        ) : (
-                                                            <Text style={styles.tableCell}>{studentClass?.name || 'Unassigned'}</Text>
-                                                        )}
-                                                    </View>
-                                                    <View style={[styles.actionButtons, { flex: 2 }]}>
-                                                        {isEditing ? (
-                                                            <>
-                                                                <TouchableOpacity
-                                                                    style={styles.saveButton}
-                                                                    onPress={() => saveEdit(student.id)}
-                                                                >
-                                                                    <Text style={styles.buttonText}>Save</Text>
-                                                                </TouchableOpacity>
-                                                                <TouchableOpacity
-                                                                    style={styles.cancelButton}
-                                                                    onPress={cancelEdit}
-                                                                >
-                                                                    <Text style={styles.buttonText}>Cancel</Text>
-                                                                </TouchableOpacity>
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <TouchableOpacity
-                                                                    style={styles.editButton}
-                                                                    onPress={() => startEdit(student)}
-                                                                >
-                                                                    <Text style={styles.buttonText}>Edit</Text>
-                                                                </TouchableOpacity>
-                                                                <TouchableOpacity
-                                                                    style={styles.deleteButton}
-                                                                    onPress={() => deleteStudent(student.id)}
-                                                                >
-                                                                    <Text style={styles.buttonText}>Delete</Text>
-                                                                </TouchableOpacity>
-                                                            </>
-                                                        )}
-                                                    </View>
-                                                </View>
-                                            );
-                                        })}
-                                        {students.length === 0 && (
-                                            <Text style={styles.emptyText}>
-                                                No students found. Add students manually or upload a CSV file.
+                                    <View style={styles.formCard}>
+                                        <Text style={styles.formTitle}>Upload Students from CSV</Text>
+                                        <Text style={styles.helperText}>
+                                            CSV format: name,number,class (class is optional)
+                                        </Text>
+                                        <TouchableOpacity
+                                            style={styles.uploadButton}
+                                            onPress={handleUploadCSV}
+                                            disabled={uploading}
+                                        >
+                                            <Text style={styles.addButtonText}>
+                                                {uploading ? 'Uploading...' : 'Select CSV File'}
                                             </Text>
+                                        </TouchableOpacity>
+                                        {uploadMessage && (
+                                            <View style={[
+                                                styles.uploadMessageContainer,
+                                                uploadMessage.includes('✅') ? styles.successMessage : styles.errorMessage
+                                            ]}>
+                                                <Text style={styles.uploadMessageText}>{uploadMessage}</Text>
+                                            </View>
                                         )}
                                     </View>
-                                </View>
+
+                                    <View style={styles.section}>
+                                        <Text style={styles.sectionTitle}>Existing Students</Text>
+                                        <View style={styles.tableContainer}>
+                                            <View style={styles.tableHeader}>
+                                                <Text style={[styles.tableHeaderText, { flex: 2 }]}>Student</Text>
+                                                <Text style={[styles.tableHeaderText, { flex: 1 }]}>Class</Text>
+                                                <Text style={[styles.tableHeaderText, { flex: 1 }]}>Grade</Text>
+                                                <Text style={[styles.tableHeaderText, { flex: 1, textAlign: 'center' }]}>Actions</Text>
+                                            </View>
+                                            {students.map((student) => (
+                                                editingStudentId === student.id ? (
+                                                    <View key={student.id} style={styles.tableRow}>
+                                                        <TextInput
+                                                            style={[styles.tableInput, { flex: 2 }]}
+                                                            value={editForm.name}
+                                                            onChangeText={(text) => setEditForm({ ...editForm, name: text })}
+                                                        />
+                                                        <TextInput
+                                                            style={[styles.tableInput, { flex: 1 }]}
+                                                            value={editForm.grade}
+                                                            onChangeText={(text) => setEditForm({ ...editForm, grade: text })}
+                                                        />
+                                                        <View style={[styles.actionButtons, { flex: 1, justifyContent: 'center' }]}>
+                                                            <TouchableOpacity
+                                                                style={styles.saveButton}
+                                                                onPress={() => saveEdit(student.id)}
+                                                            >
+                                                                <Text style={styles.buttonText}>Save</Text>
+                                                            </TouchableOpacity>
+                                                            <TouchableOpacity
+                                                                style={styles.cancelButton}
+                                                                onPress={cancelEdit}
+                                                            >
+                                                                <Text style={styles.buttonText}>Cancel</Text>
+                                                            </TouchableOpacity>
+                                                        </View>
+                                                    </View>
+                                                ) : (
+                                                    <View key={student.id} style={styles.tableRow}>
+                                                        <Text style={[styles.tableCell, { flex: 2 }]}>{student.name}</Text>
+                                                        <Text style={[styles.tableCell, { flex: 1 }]}>
+                                                            {classes.find(c => c.id === student.classId)?.name || '-'}
+                                                        </Text>
+                                                        <Text style={[styles.tableCell, { flex: 1 }]}>{student.grade || '-'}</Text>
+                                                        <View style={[styles.actionButtons, { flex: 1, justifyContent: 'center' }]}>
+                                                            <TouchableOpacity
+                                                                style={styles.editButton}
+                                                                onPress={() => startEdit(student)}
+                                                            >
+                                                                <Text style={styles.buttonText}>Edit</Text>
+                                                            </TouchableOpacity>
+                                                            <TouchableOpacity
+                                                                style={styles.deleteButton}
+                                                                onPress={() => deleteStudent(student.id)}
+                                                            >
+                                                                <Text style={styles.buttonText}>Delete</Text>
+                                                            </TouchableOpacity>
+                                                        </View>
+                                                    </View>
+                                                )
+                                            ))}
+                                            {students.length === 0 && (
+                                                <Text style={styles.emptyText}>No students created yet</Text>
+                                            )}
+                                        </View>
+                                    </View>
+                                </>
                             )}
-                        </View>
+                        </ScrollView>
                     )}
-                </ScrollView>
+                </View>
             </View>
         </View>
     );
@@ -842,40 +824,16 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         fontSize: 16,
     },
-    listItemSubtitle: {
-        color: '#888',
+    deleteButton: {
+        backgroundColor: '#F44336',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 6,
+    },
+    buttonText: {
+        color: '#FFF',
+        fontWeight: '600',
         fontSize: 12,
-    },
-    helperText: {
-        color: '#888',
-        fontSize: 12,
-        marginBottom: 12,
-    },
-    uploadButton: {
-        backgroundColor: '#3A86FF',
-        paddingVertical: 12,
-        borderRadius: 8,
-        alignItems: 'center',
-        flexDirection: 'row',
-        justifyContent: 'center',
-    },
-    uploadMessageContainer: {
-        marginTop: 12,
-        padding: 12,
-        borderRadius: 8,
-    },
-    successMessage: {
-        backgroundColor: 'rgba(76, 175, 80, 0.1)',
-        borderWidth: 1,
-        borderColor: '#4CAF50',
-    },
-    errorMessage: {
-        backgroundColor: 'rgba(211, 47, 47, 0.1)',
-        borderWidth: 1,
-        borderColor: '#D32F2F',
-    },
-    uploadMessageText: {
-        color: '#EAEAEA',
     },
     tableContainer: {
         backgroundColor: '#1E1E1E',
@@ -888,45 +846,76 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         borderBottomWidth: 1,
         borderBottomColor: '#2D2D2D',
-        paddingBottom: 8,
-        marginBottom: 8,
+        paddingBottom: 12,
+        marginBottom: 12,
     },
     tableHeaderText: {
         color: '#888',
         fontWeight: 'bold',
-        fontSize: 12,
+        fontSize: 14,
     },
     tableRow: {
         flexDirection: 'row',
+        alignItems: 'center',
         paddingVertical: 12,
         borderBottomWidth: 1,
         borderBottomColor: '#2D2D2D',
-        alignItems: 'center',
     },
     tableCell: {
         color: '#EAEAEA',
         fontSize: 14,
     },
-    tableInput: {
-        backgroundColor: '#121212',
-        borderWidth: 1,
-        borderColor: '#3A86FF',
-        borderRadius: 6,
-        padding: 8,
-        color: '#EAEAEA',
-        fontSize: 14,
+    emptyText: {
+        color: '#888',
+        textAlign: 'center',
+        padding: 20,
+        fontStyle: 'italic',
     },
     pickerContainer: {
         backgroundColor: '#121212',
         borderWidth: 1,
-        borderColor: '#3A86FF',
-        borderRadius: 6,
-        height: 40,
+        borderColor: '#2D2D2D',
+        borderRadius: 8,
+        marginBottom: 12,
         justifyContent: 'center',
     },
     picker: {
         color: '#EAEAEA',
-        height: 40,
+        height: 50,
+    },
+    helperText: {
+        color: '#888',
+        fontSize: 12,
+        marginBottom: 12,
+    },
+    uploadButton: {
+        backgroundColor: '#2D2D2D',
+        paddingVertical: 12,
+        borderRadius: 8,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#3A86FF',
+        borderStyle: 'dashed',
+    },
+    uploadMessageContainer: {
+        marginTop: 12,
+        padding: 12,
+        borderRadius: 8,
+    },
+    successMessage: {
+        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+        borderWidth: 1,
+        borderColor: '#4CAF50',
+    },
+    errorMessage: {
+        backgroundColor: 'rgba(244, 67, 54, 0.1)',
+        borderWidth: 1,
+        borderColor: '#F44336',
+    },
+    uploadMessageText: {
+        color: '#EAEAEA',
+        textAlign: 'center',
+        fontSize: 14,
     },
     actionButtons: {
         flexDirection: 'row',
@@ -938,12 +927,6 @@ const styles = StyleSheet.create({
         paddingVertical: 6,
         borderRadius: 6,
     },
-    deleteButton: {
-        backgroundColor: '#D32F2F',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 6,
-    },
     saveButton: {
         backgroundColor: '#4CAF50',
         paddingHorizontal: 12,
@@ -951,20 +934,18 @@ const styles = StyleSheet.create({
         borderRadius: 6,
     },
     cancelButton: {
-        backgroundColor: '#888',
+        backgroundColor: '#757575',
         paddingHorizontal: 12,
         paddingVertical: 6,
         borderRadius: 6,
     },
-    buttonText: {
-        color: '#FFF',
-        fontSize: 12,
-        fontWeight: '600',
-    },
-    emptyText: {
-        color: '#888',
-        textAlign: 'center',
-        padding: 20,
+    tableInput: {
+        backgroundColor: '#121212',
+        borderWidth: 1,
+        borderColor: '#3A86FF',
+        borderRadius: 4,
+        padding: 4,
+        color: '#EAEAEA',
+        marginRight: 8,
     },
 });
-

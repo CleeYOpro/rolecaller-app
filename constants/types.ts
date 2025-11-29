@@ -4,7 +4,7 @@ export type Student = {
     id: string;
     name: string;
     grade?: string;
-    classId?: string;
+    classId?: string; // This will now be a UUID
     schoolId: string;
 };
 
@@ -16,15 +16,25 @@ export type School = {
 };
 
 export type Class = {
-    id: string;
+    id: string; // This will now be a UUID
     name: string;
     schoolId: string;
+};
+// Add to constants/types.ts
+export type AttendanceLocal = {
+    id: string;
+    studentId: string;
+    classId: string;
+    status: AttendanceStatus;
+    date: string;
+    updatedAt: string;
+    synced: 'true' | 'false';
 };
 
 export type ClassAssignments = Record<string, string[]>; // classId -> [studentId]
 
 export type AttendanceMap = Record<
-    string, // classId
+    string, // classId (now UUID)
     Record<
         string, // YYYY-MM-DD date
         Record<string, AttendanceStatus> // studentId -> status

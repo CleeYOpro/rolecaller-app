@@ -18,9 +18,28 @@ export default function TeacherDashboard() {
 
     // State
     const [students, setStudents] = useState<Student[]>([]);
+    const [allStudents, setAllStudents] = useState<Student[]>([]);
+    const [allClasses, setAllClasses] = useState<any[]>([]);
     const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [showSearchView, setShowSearchView] = useState(false);
+
+    // Add state
+    const [unsyncedCount, setUnsyncedCount] = useState(0);
+    const [isPushing, setIsPushing] = useState(false);
+
+    // Add effect to watch unsynced
+    useEffect(() => {
+        const updateUnsynced = async () => {
+            // TODO: Implement getUnsyncedCount in attendanceService
+            // const count = await attendanceService.getUnsyncedCount();
+            // setUnsyncedCount(count);
+        };
+        updateUnsynced();
+        const interval = setInterval(updateUnsynced, 5000); // Refresh every 5s
+        return () => clearInterval(interval);
+    }, []);
 
     // Fetch students on mount (from SQLite)
     useEffect(() => {
@@ -30,6 +49,19 @@ export default function TeacherDashboard() {
                 .catch(err => console.error("Failed to fetch students", err));
         }
     }, [classId, schoolId]);
+
+    // Fetch all students and classes for search view
+    useEffect(() => {
+        if (schoolId) {
+            attendanceService.getAllStudents(schoolId)
+                .then(setAllStudents)
+                .catch(err => console.error("Failed to fetch all students", err));
+
+            attendanceService.getClasses(schoolId)
+                .then(setAllClasses)
+                .catch(err => console.error("Failed to fetch classes", err));
+        }
+    }, [schoolId]);
 
     // Fetch attendance when date or class changes (API + SQLite)
     useEffect(() => {
@@ -69,6 +101,10 @@ export default function TeacherDashboard() {
                 // Refresh students list
                 const updatedStudents = await attendanceService.getStudents(schoolId, classId);
                 setStudents(updatedStudents);
+
+                // Refresh all students list
+                const allUpdatedStudents = await attendanceService.getAllStudents(schoolId);
+                setAllStudents(allUpdatedStudents);
             }
             // Refresh attendance
             const updatedAttendance = await attendanceService.getAttendance(classId, today);
@@ -83,6 +119,22 @@ export default function TeacherDashboard() {
         }
     };
 
+    const handleStudentUpdate = (updatedStudent: Student) => {
+        // Update the students list with the modified student
+        setStudents(prevStudents =>
+            prevStudents.map(student =>
+                student.id === updatedStudent.id ? updatedStudent : student
+            )
+        );
+
+        // Also update the allStudents list
+        setAllStudents(prevAllStudents =>
+            prevAllStudents.map(student =>
+                student.id === updatedStudent.id ? updatedStudent : student
+            )
+        );
+    };
+
     useEffect(() => {
         if (toastMessage) {
             const timer = setTimeout(() => setToastMessage(null), 3000);
@@ -92,47 +144,6 @@ export default function TeacherDashboard() {
 
     const goBack = () => {
         router.back();
-    };
-
-    // Calendar Logic
-    const currentMonth = selectedDate.getMonth();
-    const currentYear = selectedDate.getFullYear();
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
-
-    const changeMonth = (delta: number) => {
-        setSelectedDate(new Date(currentYear, currentMonth + delta, 1));
-    };
-
-    const renderCalendar = () => {
-        const days = [];
-        // Empty slots for start of month
-        for (let i = 0; i < firstDayOfMonth; i++) {
-            days.push(<View key={`empty-${i}`} style={styles.calendarDay} />);
-        }
-        // Days
-        for (let d = 1; d <= daysInMonth; d++) {
-            const date = new Date(currentYear, currentMonth, d);
-            const isSelected = date.toDateString() === selectedDate.toDateString();
-            days.push(
-                <TouchableOpacity
-                    key={d}
-                    style={[styles.calendarDay, isSelected && styles.selectedDay]}
-                    onPress={() => setSelectedDate(date)}
-                >
-                    <Text style={[styles.dayText, isSelected && styles.selectedDayText]}>{d}</Text>
-                </TouchableOpacity>
-            );
-        }
-
-        return (
-            <View style={styles.calendarGrid}>
-                {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
-                    <Text key={d} style={styles.weekDayText}>{d}</Text>
-                ))}
-                {days}
-            </View>
-        );
     };
 
     return (
@@ -165,23 +176,36 @@ export default function TeacherDashboard() {
                 </View>
             </View>
 
-            <ScrollView style={styles.content}>
-                {/* Calendar Section */}
-                <View style={styles.card}>
-                    <View style={styles.calendarHeader}>
-                        <TouchableOpacity onPress={() => changeMonth(-1)}>
-                            <Ionicons name="chevron-back" size={24} color="#EAEAEA" />
-                        </TouchableOpacity>
-                        <Text style={styles.monthTitle}>
-                            {selectedDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
-                        </Text>
-                        <TouchableOpacity onPress={() => changeMonth(1)}>
-                            <Ionicons name="chevron-forward" size={24} color="#EAEAEA" />
-                        </TouchableOpacity>
-                    </View>
-                    {renderCalendar()}
-                </View>
+            {/* In your JSX (e.g., header or bottom bar), add Push button: */}
+            <View style={styles.syncContainer}>
+                <TouchableOpacity
+                    style={[styles.pushButton, isPushing && styles.pushing]}
+                    onPress={async () => {
+                        setIsPushing(true);
+                        try {
+                            // TODO: Implement pushOfflineAttendance in attendanceService
+                            // const { success, errors } = await attendanceService.pushOfflineAttendance();
+                            // if (success > 0) {
+                            //     setToastMessage(`Pushed ${success} records!`);
+                            //     // Refresh attendance
+                            //     attendanceService.getAttendance(classId, today).then(setAttendance);
+                            // }
+                            // if (errors > 0) setToastMessage(`Pushed with ${errors} errors`);
+                        } catch (e) {
+                            setToastMessage("Push failed - check connection");
+                        }
+                        setIsPushing(false);
+                    }}
+                    disabled={unsyncedCount === 0 || isPushing}
+                >
+                    <Ionicons name={isPushing ? "cloud-upload-outline" : "cloud-upload"} size={20} color="white" />
+                    <Text style={styles.pushButtonText}>
+                        {isPushing ? 'Pushing...' : `Push Attendance ${unsyncedCount > 0 ? `(${unsyncedCount})` : ''}`}
+                    </Text>
+                </TouchableOpacity>
+            </View>
 
+            <ScrollView style={styles.content}>
                 {/* Students List */}
                 <View style={[styles.card, { marginTop: 20, marginBottom: 40 }]}>
                     <View style={styles.listHeader}>
@@ -312,31 +336,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginBottom: 16,
     },
-    monthTitle: {
-        color: '#EAEAEA',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    calendarGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        justifyContent: 'flex-start',
-    },
-    weekDayText: {
-        width: '14.28%',
-        textAlign: 'center',
-        color: '#888',
-        marginBottom: 8,
-        fontSize: 12,
-        fontWeight: 'bold',
-    },
-    calendarDay: {
-        width: '14.28%',
-        aspectRatio: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 4,
-    },
+
     selectedDay: {
         backgroundColor: '#3A86FF',
         borderRadius: 8,
@@ -449,5 +449,26 @@ const styles = StyleSheet.create({
     toastText: {
         color: '#FFF',
         fontWeight: 'bold',
+    },
+    // Add to your styles
+    syncContainer: {
+        padding: 10,
+        backgroundColor: '#f0f0f0',
+    },
+    pushButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#007AFF',
+        padding: 12,
+        borderRadius: 8,
+    },
+    pushButtonText: {
+        color: 'white',
+        marginLeft: 8,
+        fontWeight: '600',
+    },
+    pushing: {
+        opacity: 0.7,
     },
 });

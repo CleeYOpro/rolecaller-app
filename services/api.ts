@@ -8,21 +8,29 @@ export const api = {
     // Schools
     getSchools: async (): Promise<School[]> => {
         try {
+            console.log('Fetching schools from database...');
             const result = await db.select({
                 id: schools.id,
                 name: schools.name,
                 email: schools.email,
                 address: schools.address,
             }).from(schools);
-            return result as School[];
+            console.log('Successfully fetched schools:', result);
+            return result.map(school => ({
+                id: school.id,
+                name: school.name,
+                email: school.email,
+                address: school.address
+            }));
         } catch (err) {
             console.error('Failed to fetch schools:', err);
-            throw new Error('Failed to fetch schools');
+            throw new Error('Failed to fetch schools: ' + (err as Error).message);
         }
     },
 
     login: async (email: string, password: string): Promise<School> => {
         try {
+            console.log(`Attempting login with email: ${email}`);
             const result = await db.select({
                 id: schools.id,
                 name: schools.name,
@@ -32,43 +40,50 @@ export const api = {
             }).from(schools).where(eq(schools.email, email)).limit(1);
 
             if (result.length === 0) {
+                console.log('No school found with email:', email);
                 throw new Error('School not found');
             }
 
             const school = result[0];
+            console.log('Found school:', school.name);
+
             if (school.password !== password) {
+                console.log('Invalid password provided for school:', school.name);
                 throw new Error('Invalid password');
             }
 
             // Don't return password
             const { password: _, ...schoolWithoutPassword } = school;
+            console.log('Login successful for school:', school.name);
             return schoolWithoutPassword as School;
         } catch (err) {
             console.error('Login error:', err);
-            throw err instanceof Error ? err : new Error('Login failed');
+            throw err instanceof Error ? err : new Error('Login failed: ' + (err as Error).message);
         }
     },
 
     // Classes
     getClasses: async (schoolId: string): Promise<Class[]> => {
         try {
+            console.log('Fetching classes for schoolId:', schoolId);
             const result = await db.select({
                 id: classes.id,
                 name: classes.name,
                 schoolId: classes.schoolId,
             }).from(classes).where(eq(classes.schoolId, schoolId));
+            console.log('Successfully fetched classes:', result);
             return result;
         } catch (err) {
             console.error('Failed to fetch classes:', err);
-            throw new Error('Failed to fetch classes');
+            throw new Error('Failed to fetch classes: ' + (err as Error).message);
         }
     },
 
     addClass: async (name: string, schoolId: string): Promise<Class> => {
         try {
-            // Generate a 5-digit class ID
+            // Generate a 5-digit class ID to match the schema
             const classId = Math.floor(10000 + Math.random() * 90000).toString();
-            
+
             const result = await db.insert(classes).values({
                 id: classId,
                 name,
@@ -77,7 +92,7 @@ export const api = {
             return result[0];
         } catch (err) {
             console.error('Failed to add class:', err);
-            throw new Error('Failed to add class');
+            throw new Error('Failed to add class: ' + (err as Error).message);
         }
     },
 
@@ -86,7 +101,7 @@ export const api = {
             await db.delete(classes).where(eq(classes.id, id));
         } catch (err) {
             console.error('Failed to delete class:', err);
-            throw new Error('Failed to delete class');
+            throw new Error('Failed to delete class: ' + (err as Error).message);
         }
     },
 
@@ -97,7 +112,7 @@ export const api = {
             if (classId) {
                 conditions = and(eq(students.schoolId, schoolId), eq(students.classId, classId))!;
             }
-            
+
             const result = await db.select({
                 id: students.id,
                 name: students.name,
@@ -105,17 +120,17 @@ export const api = {
                 schoolId: students.schoolId,
                 grade: students.grade,
             }).from(students).where(conditions);
-            
+
             return result.map(s => ({
                 id: s.id,
                 name: s.name,
                 classId: s.classId,
                 schoolId: s.schoolId,
-                grade: s.grade,
+                grade: s.grade
             }));
         } catch (err) {
             console.error('Failed to fetch students:', err);
-            throw new Error('Failed to fetch students');
+            throw new Error('Failed to fetch students: ' + (err as Error).message);
         }
     },
 
@@ -130,7 +145,7 @@ export const api = {
             return result[0];
         } catch (err) {
             console.error('Failed to add student:', err);
-            throw err instanceof Error ? err : new Error('Failed to add student');
+            throw err instanceof Error ? err : new Error('Failed to add student: ' + (err as Error).message);
         }
     },
 
@@ -138,13 +153,13 @@ export const api = {
         try {
             for (const s of studentsList) {
                 let classId = s.classId;
-                
+
                 // Create class if it doesn't exist
                 if (s.class && !classId) {
                     const existingClass = await db.select().from(classes)
                         .where(and(eq(classes.schoolId, s.schoolId), eq(classes.name, s.class)))
                         .limit(1);
-                    
+
                     if (existingClass.length > 0) {
                         classId = existingClass[0].id;
                     } else {
@@ -158,7 +173,7 @@ export const api = {
                         classId = newClass[0].id;
                     }
                 }
-                
+
                 await db.insert(students).values({
                     name: s.name,
                     classId: classId,
@@ -168,7 +183,7 @@ export const api = {
             }
         } catch (err) {
             console.error('Bulk upload error:', err);
-            throw err instanceof Error ? err : new Error('Bulk upload failed');
+            throw err instanceof Error ? err : new Error('Bulk upload failed: ' + (err as Error).message);
         }
     },
 
@@ -184,7 +199,7 @@ export const api = {
                 .where(eq(students.id, student.id));
         } catch (err) {
             console.error('Failed to update student:', err);
-            throw new Error('Update failed');
+            throw new Error('Update failed: ' + (err as Error).message);
         }
     },
 
@@ -193,7 +208,7 @@ export const api = {
             await db.delete(students).where(eq(students.id, id));
         } catch (err) {
             console.error('Failed to delete student:', err);
-            throw new Error('Failed to delete student');
+            throw new Error('Failed to delete student: ' + (err as Error).message);
         }
     },
 
@@ -213,7 +228,7 @@ export const api = {
             return map;
         } catch (err) {
             console.error('Failed to fetch attendance:', err);
-            throw new Error('Failed to fetch attendance');
+            throw new Error('Failed to fetch attendance: ' + (err as Error).message);
         }
     },
 
@@ -234,7 +249,7 @@ export const api = {
             return map;
         } catch (err) {
             console.error('Failed to fetch all attendance:', err);
-            throw new Error('Failed to fetch all attendance');
+            throw new Error('Failed to fetch all attendance: ' + (err as Error).message);
         }
     },
 
@@ -252,7 +267,7 @@ export const api = {
                 // Update
                 await db.update(attendance)
                     .set({ status, updatedAt: new Date() })
-                    .where(eq(attendance.id, existing[0].id));
+                    .where(eq(attendance.id, existing[0].id as string));
             } else {
                 // Insert
                 await db.insert(attendance).values({
@@ -264,7 +279,7 @@ export const api = {
             }
         } catch (err) {
             console.error('Failed to mark attendance:', err);
-            throw err instanceof Error ? err : new Error('Failed to mark attendance');
+            throw err instanceof Error ? err : new Error('Failed to mark attendance: ' + (err as Error).message);
         }
     }
 };

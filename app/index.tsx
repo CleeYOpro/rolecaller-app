@@ -1,11 +1,15 @@
 import { Class, School } from '@/constants/types';
 import { api } from '@/services/api';
-import { attendanceService } from '@/services/attendanceService';
 import { storage } from '@/services/storage';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+
+// app/index.tsx - CORRECT imports
+import { localDb, schoolsLocal } from '@/database/localdb'; // ← HERE
+import { attendanceService } from '@/services/attendanceService';
+import { eq } from 'drizzle-orm';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -17,6 +21,9 @@ export default function LoginPage() {
     const [error, setError] = useState("");
     const [showSchoolPicker, setShowSchoolPicker] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+
+    // Add state for download
+    const [isDownloading, setIsDownloading] = useState(false);
 
     // Teacher specific
     const [availableClasses, setAvailableClasses] = useState<Class[]>([]);
@@ -41,8 +48,6 @@ export default function LoginPage() {
 
     React.useEffect(() => {
         fetchSchools();
-        // Initialize SQLite on mount to be ready
-        attendanceService.init().catch(console.error);
     }, []);
 
     const goBack = () => {
@@ -56,41 +61,58 @@ export default function LoginPage() {
     };
 
     const handleTeacherLogin = async () => {
-        setIsLoading(true);
-        try {
-            // Ensure DB is initialized before checking local data
-            await attendanceService.init();
+        setRole("teacher");
 
-            // 1. Check if we have any local data (implies we are "locked" to a school)
-            const localSchoolId = await attendanceService.getLocalSchoolId();
+        // Check if we already have offline data
+        const hasOfflineData = await attendanceService.hasOfflineData();
 
-            if (localSchoolId) {
-                console.log("Found local school ID:", localSchoolId);
-                // 2. Check if we have local data for this school
-                const classes = await attendanceService.getClasses(localSchoolId);
-                if (classes.length > 0) {
-                    console.log("Found local classes, skipping login");
-                    // We don't have the school name easily available without querying API or storing it separately.
-                    // For now, we can use a placeholder or just the ID. 
-                    // Ideally, we should store school name in SQLite too, but schema change is restricted.
-                    // We can fetch it from storage if available, or just use "Your School".
-                    const savedSchool = await storage.getSchool();
-                    const schoolName = savedSchool?.id === localSchoolId ? savedSchool.name : "Your School";
+        if (hasOfflineData) {
+            Alert.alert(
+                "Offline Mode Available",
+                "Do you want to log in offline?",
+                [
+                    { text: "Online Login", style: "cancel" },
+                    { text: "Offline Login", onPress: handleOfflineLogin },
+                ]
+            );
+        } else {
+            // No offline data → force online flow
+            setShowSchoolPicker(true);
+        }
+    };
 
-                    setSelectedSchool({ id: localSchoolId, name: schoolName } as School);
-                    setAvailableClasses(classes);
-                    setRole("teacher");
-                    setIsLoading(false);
-                    return;
-                }
-            }
-        } catch (e) {
-            console.error("Error checking local data", e);
+    const handleOfflineLogin = async () => {
+        const savedSchool = await storage.getSchool();
+        if (!savedSchool) {
+            Alert.alert("Error", "No offline data found");
+            return;
         }
 
-        // If no local data, proceed to normal role selection (which shows login form)
-        setRole("teacher");
-        setIsLoading(false);
+        if (!schoolPassword) {
+            setError("Enter password to log in offline");
+            return;
+        }
+
+        try {
+            const localSchool = await localDb
+                .select()
+                .from(schoolsLocal)
+                .where(eq(schoolsLocal.id, savedSchool.id))
+                .limit(1);
+
+            if (localSchool.length === 0 || localSchool[0].password !== schoolPassword) {
+                setError("Wrong password for offline login");
+                return;
+            }
+
+            // Success → go straight to teacher dashboard
+            router.push({
+                pathname: "/teacher",
+                params: { schoolId: savedSchool.id, schoolName: savedSchool.name }
+            });
+        } catch (e) {
+            setError("Offline login failed");
+        }
     };
 
     const handleLogin = async () => {
@@ -106,25 +128,45 @@ export default function LoginPage() {
             // Verify credentials via API
             await api.login(schoolEmail, schoolPassword);
 
-            // Initialize SQLite and Sync
-            try {
-                await attendanceService.init();
-                await attendanceService.syncDataFromNeon(selectedSchool.id);
-                // Save school to storage on successful sync/login
-                await storage.saveSchool(selectedSchool.id, selectedSchool.name);
-            } catch (syncErr) {
-                console.warn("Sync/Init failed, proceeding with local data if available", syncErr);
-            }
+            // Save school to storage on successful login
+            await storage.saveSchool(selectedSchool.id, selectedSchool.name);
 
             if (role === "admin") {
                 router.push({
-                    pathname: "/admin" as any,
+                    pathname: "/admin",
                     params: { schoolId: selectedSchool.id, schoolName: selectedSchool.name }
                 });
-            } else {
-                // For teacher, fetch classes from SQLite (with API fallback)
+            } else if (role === "teacher") {
+                // After successful login → ask to download data if not already done
+                const hasData = await attendanceService.hasOfflineData();
+                if (!hasData) {
+                    Alert.alert(
+                        "Enable Offline Mode",
+                        "Download your school data to use the app without internet?",
+                        [
+                            { text: "Not Now", style: "cancel" },
+                            {
+                                text: "Download Now",
+                                onPress: async () => {
+                                    setIsDownloading(true);
+                                    try {
+                                        await attendanceService.downloadSchoolData(selectedSchool.id);
+                                        Alert.alert("Downloaded!", "You can now use the app offline");
+                                    } catch (err: any) {
+                                        Alert.alert("Download Failed", err.message || "Check your connection");
+                                    } finally {
+                                        setIsDownloading(false);
+                                    }
+                                }
+                            }
+                        ],
+                        { cancelable: true }
+                    );
+                }
+
+                // For teacher, after login
                 try {
-                    const classes = await attendanceService.getClasses(selectedSchool.id);
+                    const classes = await api.getClasses(selectedSchool.id);
                     if (classes.length === 0) {
                         Alert.alert("No Classes", "There are no classes set up for this school yet.");
                     } else {
@@ -146,7 +188,7 @@ export default function LoginPage() {
     const handleClassSelect = (cls: Class) => {
         setSelectedClass(cls);
         router.push({
-            pathname: "/teacher" as any,
+            pathname: "/teacher",
             params: {
                 schoolId: selectedSchool!.id,
                 classId: cls.id,

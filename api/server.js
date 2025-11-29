@@ -172,11 +172,10 @@ const server = http.createServer(async (req, res) => {
         const { name, schoolId } = JSON.parse(body);
         // Use UUID for class ID to match Drizzle schema
         const result = await pool.query(
-          'INSERT INTO classes (id, name, school_id) VALUES (gen_random_uuid(), $1, $2) RETURNING id',
+          'INSERT INTO classes (id, name, school_id) VALUES (gen_random_uuid(), $1, $2) RETURNING id, name, school_id as "schoolId"',
           [name, schoolId]
         );
-        const id = result.rows[0].id;
-        return sendJSON(res, 201, { id, name, schoolId });
+        return sendJSON(res, 201, result.rows[0]);
       });
       return;
     }
@@ -193,7 +192,7 @@ const server = http.createServer(async (req, res) => {
       const classId = url.searchParams.get('classId');
 
       let query = `
-                SELECT id, name, class_id as "classId", school_id as "schoolId", roll_number as "rollNumber", created_at as "createdAt"
+                SELECT id, name, class_id as "classId", school_id as "schoolId", grade, created_at as "createdAt"
                 FROM students WHERE school_id = $1
             `;
       const params = [schoolId];
@@ -211,13 +210,11 @@ const server = http.createServer(async (req, res) => {
       let body = '';
       req.on('data', chunk => body += chunk);
       req.on('end', async () => {
-        const { id, name, standard, classId, schoolId } = JSON.parse(body);
-        // Check if exists (id might be a roll number string, we'll use it as roll_number)
-        const rollNumber = parseInt(id) || null;
-        // Use UUID for student ID, but store the provided id as roll_number
+        const { name, classId, schoolId, grade } = JSON.parse(body);
+        // Use UUID for student ID
         const result = await pool.query(
-          'INSERT INTO students (id, name, class_id, school_id, roll_number) VALUES (gen_random_uuid(), $1, $2, $3, $4) RETURNING id',
-          [name, classId, schoolId, rollNumber]
+          'INSERT INTO students (id, name, class_id, school_id, grade) VALUES (gen_random_uuid(), $1, $2, $3, $4) RETURNING id',
+          [name, classId, schoolId, grade || '']
         );
         return sendJSON(res, 201, { success: true, id: result.rows[0].id });
       });
@@ -255,12 +252,11 @@ const server = http.createServer(async (req, res) => {
               }
             }
 
-            // 2. Insert Student (use UUID for id, store provided id as roll_number)
-            const rollNumber = parseInt(s.id) || null;
+            // 2. Insert Student (use UUID for id)
             await client.query(`
-              INSERT INTO students (id, name, class_id, school_id, roll_number)
+              INSERT INTO students (id, name, class_id, school_id, grade)
               VALUES (gen_random_uuid(), $1, $2, $3, $4)
-            `, [s.name, classId, s.schoolId, rollNumber]);
+            `, [s.name, classId, s.schoolId, s.grade || s.standard || '']);
           }
 
           await client.query('COMMIT');
@@ -281,12 +277,12 @@ const server = http.createServer(async (req, res) => {
       req.on('data', chunk => body += chunk);
       req.on('end', async () => {
         try {
-          const { id, name, classId, schoolId } = JSON.parse(body);
+          const { id, name, classId, schoolId, grade } = JSON.parse(body);
           await pool.query(`
             UPDATE students 
-            SET name = $1, class_id = $2, school_id = $3
-            WHERE id = $4
-          `, [name, classId, schoolId, id]);
+            SET name = $1, class_id = $2, school_id = $3, grade = $4
+            WHERE id = $5
+          `, [name, classId, schoolId, grade, id]);
           return sendJSON(res, 200, { success: true });
         } catch (err) {
           console.error('Update student error', err);
