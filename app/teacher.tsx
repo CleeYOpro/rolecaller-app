@@ -32,12 +32,9 @@ export default function TeacherDashboard() {
     // Add effect to watch unsynced
     useEffect(() => {
         const updateUnsynced = async () => {
-            // TODO: Implement getUnsyncedCount in attendanceService
-            // const count = await attendanceService.getUnsyncedCount();
-            // setUnsyncedCount(count);
         };
         updateUnsynced();
-        const interval = setInterval(updateUnsynced, 5000); // Refresh every 5s
+        const interval = setInterval(updateUnsynced, 5000); // 5 sec
         return () => clearInterval(interval);
     }, []);
 
