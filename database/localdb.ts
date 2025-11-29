@@ -1,9 +1,6 @@
-// database/localdb.ts
 import { drizzle } from 'drizzle-orm/expo-sqlite';
 import { index, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import * as SQLite from 'expo-sqlite';
-
-// Open database
 const db = SQLite.openDatabaseSync('rolecaller_local.db');
 export const localDb = drizzle(db);
 
@@ -48,7 +45,6 @@ export const attendanceLocal = sqliteTable('attendance_local', {
     uniqueIdx: index('unique_student_date').on(t.studentId, t.date),
 }));
 
-// THIS IS THE MAGIC — runs once on app start
 const createTables = () => {
     db.execSync(`
     PRAGMA journal_mode = WAL;
@@ -94,7 +90,6 @@ const createTables = () => {
     console.log('Local SQLite tables created/verified');
 };
 
-// Run it immediately rfegg
 createTables();
 
 export const generateUuid = () => crypto.randomUUID();
