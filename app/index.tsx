@@ -105,7 +105,7 @@ export default function LoginPage() {
                 return;
             }
 
-            // Success → go straight to teacher dashboard
+            // Success ejwhh
             router.push({
                 pathname: "/teacher",
                 params: { schoolId: savedSchool.id, schoolName: savedSchool.name }
