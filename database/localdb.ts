@@ -94,7 +94,7 @@ const createTables = () => {
     console.log('Local SQLite tables created/verified');
 };
 
-// Run it immediately
+// Run it immediately rfegg
 createTables();
 
 export const generateUuid = () => crypto.randomUUID();
