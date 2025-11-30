@@ -7,9 +7,7 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // app/index.tsx - CORRECT imports
-import { localDb, schoolsLocal } from '@/database/localdb'; // ← HERE
 import { attendanceService } from '@/services/attendanceService';
-import { eq } from 'drizzle-orm';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -22,8 +20,6 @@ export default function LoginPage() {
     const [showSchoolPicker, setShowSchoolPicker] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
-    // Add state for download
-    const [isDownloading, setIsDownloading] = useState(false);
 
     // Teacher specific
     const [availableClasses, setAvailableClasses] = useState<Class[]>([]);
@@ -63,55 +59,28 @@ export default function LoginPage() {
     const handleTeacherLogin = async () => {
         setRole("teacher");
 
-        // Check if we already have offline data
-        const hasOfflineData = await attendanceService.hasOfflineData();
+        const hasData = await attendanceService.hasOfflineData();
 
-        if (hasOfflineData) {
-            Alert.alert(
-                "Offline Mode Available",
-                "Do you want to log in offline?",
-                [
-                    { text: "Online Login", style: "cancel" },
-                    { text: "Offline Login", onPress: handleOfflineLogin },
-                ]
-            );
-        } else {
-            // No offline data → force online flow
-            setShowSchoolPicker(true);
-        }
-    };
+        if (hasData) {
+            const savedSchool = await storage.getSchool();
 
-    const handleOfflineLogin = async () => {
-        const savedSchool = await storage.getSchool();
-        if (!savedSchool) {
-            Alert.alert("Error", "No offline data found");
-            return;
-        }
-
-        if (!schoolPassword) {
-            setError("Enter password to log in offline");
-            return;
-        }
-
-        try {
-            const localSchool = await localDb
-                .select()
-                .from(schoolsLocal)
-                .where(eq(schoolsLocal.id, savedSchool.id))
-                .limit(1);
-
-            if (localSchool.length === 0 || localSchool[0].password !== schoolPassword) {
-                setError("Wrong password for offline login");
+            if (!savedSchool) {
+                Alert.alert("Error", "Offline data found but school not saved. Please log in online once.");
+                setShowSchoolPicker(true);
                 return;
             }
 
-            // Success ejwhh
+            // Safe navigation
             router.push({
                 pathname: "/teacher",
-                params: { schoolId: savedSchool.id, schoolName: savedSchool.name }
+                params: {
+                    schoolId: savedSchool.id,
+                    schoolName: savedSchool.name
+                }
             });
-        } catch (e) {
-            setError("Offline login failed");
+        } else {
+            // First time ever → show school picker
+            setShowSchoolPicker(true);
         }
     };
 
@@ -137,30 +106,25 @@ export default function LoginPage() {
                     params: { schoolId: selectedSchool.id, schoolName: selectedSchool.name }
                 });
             } else if (role === "teacher") {
-                // After successful login → ask to download data if not already done
+                // Ask to download data only on first login
                 const hasData = await attendanceService.hasOfflineData();
                 if (!hasData) {
                     Alert.alert(
-                        "Enable Offline Mode",
-                        "Download your school data to use the app without internet?",
+                        "Download for Offline Use",
+                        "Download your school data now to work without internet?",
                         [
-                            { text: "Not Now", style: "cancel" },
+                            { text: "Later", style: "cancel" },
                             {
-                                text: "Download Now",
-                                onPress: async () => {
-                                    setIsDownloading(true);
+                                text: "Download", onPress: async () => {
                                     try {
                                         await attendanceService.downloadSchoolData(selectedSchool.id);
-                                        Alert.alert("Downloaded!", "You can now use the app offline");
+                                        Alert.alert("Success", "You can now work offline!");
                                     } catch (err: any) {
-                                        Alert.alert("Download Failed", err.message || "Check your connection");
-                                    } finally {
-                                        setIsDownloading(false);
+                                        Alert.alert("Failed", err.message || "Check internet");
                                     }
                                 }
                             }
-                        ],
-                        { cancelable: true }
+                        ]
                     );
                 }
 
@@ -238,7 +202,7 @@ export default function LoginPage() {
             <View style={styles.container}>
                 <StatusBar style="light" />
                 <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Select Your Class</Text>
+                    <Text style={styles.cardTitle}>Select ya Class</Text>
                     <Text style={styles.cardSubtitle}>Choose a class to take attendance</Text>
 
                     <ScrollView style={styles.classList}>

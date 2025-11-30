@@ -10,8 +10,10 @@
         "gradleCommand": ":app:assembleRelease"
       }
     },
-    "preview3": {
-      "developmentClient": true
+    "development": {
+      "android": {
+        "gradleCommand": ":app:assembleRelease"
+      }
     },
     "preview4": {
       "distribution": "internal"

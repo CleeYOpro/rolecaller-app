@@ -1,12 +1,15 @@
 import { AttendanceStatus, Class, School, Student } from '@/constants/types';
 import { db } from '@/database/client';
 import { attendance, classes, schools, students } from '@/database/schema';
+import { isOnline } from '@/utils/connectivity';
 import { and, eq } from 'drizzle-orm';
 
 // Serverless: Direct database access via Neon HTTP
 export const api = {
     // Schools
     getSchools: async (): Promise<School[]> => {
+        const online = await isOnline();
+        if (!online) throw new Error('No internet connection');
         try {
             console.log('Fetching schools from database...');
             const result = await db.select({
@@ -29,6 +32,8 @@ export const api = {
     },
 
     login: async (email: string, password: string): Promise<School> => {
+        const online = await isOnline();
+        if (!online) throw new Error('No internet connection');
         try {
             console.log(`Attempting login with email: ${email}`);
             const result = await db.select({
@@ -64,6 +69,8 @@ export const api = {
 
     // Classes
     getClasses: async (schoolId: string): Promise<Class[]> => {
+        const online = await isOnline();
+        if (!online) throw new Error('No internet connection');
         try {
             console.log('Fetching classes for schoolId:', schoolId);
             const result = await db.select({
@@ -80,6 +87,8 @@ export const api = {
     },
 
     addClass: async (name: string, schoolId: string): Promise<Class> => {
+        const online = await isOnline();
+        if (!online) throw new Error('No internet connection');
         try {
             // Generate a 5-digit class ID to match the schema
             const classId = Math.floor(10000 + Math.random() * 90000).toString();
@@ -97,6 +106,8 @@ export const api = {
     },
 
     deleteClass: async (id: string): Promise<void> => {
+        const online = await isOnline();
+        if (!online) throw new Error('No internet connection');
         try {
             await db.delete(classes).where(eq(classes.id, id));
         } catch (err) {
@@ -107,6 +118,8 @@ export const api = {
 
     // Students
     getStudents: async (schoolId: string, classId?: string): Promise<Student[]> => {
+        const online = await isOnline();
+        if (!online) throw new Error('No internet connection');
         try {
             let conditions = eq(students.schoolId, schoolId);
             if (classId) {
@@ -135,6 +148,8 @@ export const api = {
     },
 
     addStudent: async (student: Student): Promise<Student> => {
+        const online = await isOnline();
+        if (!online) throw new Error('No internet connection');
         try {
             const result = await db.insert(students).values({
                 name: student.name,
@@ -150,6 +165,8 @@ export const api = {
     },
 
     uploadStudents: async (studentsList: any[]): Promise<void> => {
+        const online = await isOnline();
+        if (!online) throw new Error('No internet connection');
         try {
             for (const s of studentsList) {
                 let classId = s.classId;
@@ -188,6 +205,8 @@ export const api = {
     },
 
     updateStudent: async (student: Student): Promise<void> => {
+        const online = await isOnline();
+        if (!online) throw new Error('No internet connection');
         try {
             await db.update(students)
                 .set({
@@ -204,6 +223,8 @@ export const api = {
     },
 
     deleteStudent: async (id: string): Promise<void> => {
+        const online = await isOnline();
+        if (!online) throw new Error('No internet connection');
         try {
             await db.delete(students).where(eq(students.id, id));
         } catch (err) {
@@ -214,6 +235,8 @@ export const api = {
 
     // Attendance
     getAttendance: async (classId: string, date: string): Promise<Record<string, AttendanceStatus>> => {
+        const online = await isOnline();
+        if (!online) throw new Error('No internet connection');
         try {
             const result = await db.select({
                 studentId: attendance.studentId,
@@ -233,6 +256,8 @@ export const api = {
     },
 
     getAllAttendance: async (classId: string): Promise<Record<string, Record<string, AttendanceStatus>>> => {
+        const online = await isOnline();
+        if (!online) throw new Error('No internet connection');
         try {
             const result = await db.select({
                 studentId: attendance.studentId,
@@ -253,7 +278,9 @@ export const api = {
         }
     },
 
-    markAttendance: async (studentId: string, classId: string, date: string, status: AttendanceStatus): Promise<void> => {
+    markAttendanceRemote: async (studentId: string, classId: string, date: string, status: AttendanceStatus): Promise<void> => {
+        const online = await isOnline();
+        if (!online) throw new Error('No internet connection');
         try {
             // Check if record exists
             const existing = await db.select().from(attendance)

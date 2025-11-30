@@ -9,6 +9,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     scheme: "rolecallerapp",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
+    /* @info Added jsEngine configuration for Hermes */
+    jsEngine: "hermes",
+    /* @end */
     extra: {
         DATABASE_URL: process.env.DATABASE_URL,
         eas: {
@@ -20,6 +23,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
     android: {
         adaptiveIcon: {
+            foregroundImage: "./assets/adaptive-icon.png",
             backgroundColor: "#E6F4FE"
         },
         splash: {
@@ -39,6 +43,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         [
             "expo-splash-screen",
             {
+                "image": "./assets/splash.png",
                 "imageWidth": 200,
                 "resizeMode": "contain",
                 "backgroundColor": "#ffffff",
@@ -52,5 +57,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     experiments: {
         typedRoutes: true,
         reactCompiler: true
+    },
+    /* @info Added development client configuration */
+    developmentClient: {
+        silentLaunch: true
     }
+    /* @end */
 });

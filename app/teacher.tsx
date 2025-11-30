@@ -1,10 +1,11 @@
 import { AttendanceStatus, Student } from '@/constants/types';
 import { attendanceService } from '@/services/attendanceService';
+import { storage } from '@/services/storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function TeacherDashboard() {
     const router = useRouter();
@@ -12,6 +13,7 @@ export default function TeacherDashboard() {
     const classId = params.classId as string;
     const className = params.className as string;
     const schoolId = params.schoolId as string;
+    const schoolName = params.schoolName as string;
 
     const [selectedDate, setSelectedDate] = useState(new Date());
     const today = useMemo(() => selectedDate.toISOString().slice(0, 10), [selectedDate]);
@@ -32,6 +34,8 @@ export default function TeacherDashboard() {
     // Add effect to watch unsynced
     useEffect(() => {
         const updateUnsynced = async () => {
+            const count = await attendanceService.getUnsyncedCount();
+            setUnsyncedCount(count);
         };
         updateUnsynced();
         const interval = setInterval(updateUnsynced, 5000); // 5 sec
@@ -90,12 +94,21 @@ export default function TeacherDashboard() {
         setIsSyncing(true);
         setToastMessage("Syncing...");
         try {
-            // 1. Push local changes
-            await attendanceService.syncAttendanceToNeon();
-            // 2. Pull latest data
+            // 1. Push offline attendance to Neon
+            const result = await attendanceService.pushOfflineAttendance();
+            if (result.success > 0) {
+                Alert.alert("Success", `Pushed ${result.success} attendance records!`);
+            }
+
+            // 2. (Optional) Pull fresh classes/students if you want latest data
+            const school = await storage.getSchool();
+            if (school) {
+                await attendanceService.downloadSchoolData(school.id);
+                Alert.alert("Updated", "Latest classes & students downloaded");
+            }
+
+            // Refresh students list
             if (schoolId) {
-                await attendanceService.syncDataFromNeon(schoolId);
-                // Refresh students list
                 const updatedStudents = await attendanceService.getStudents(schoolId, classId);
                 setStudents(updatedStudents);
 
@@ -103,6 +116,7 @@ export default function TeacherDashboard() {
                 const allUpdatedStudents = await attendanceService.getAllStudents(schoolId);
                 setAllStudents(allUpdatedStudents);
             }
+
             // Refresh attendance
             const updatedAttendance = await attendanceService.getAttendance(classId, today);
             setAttendance(updatedAttendance);
@@ -111,6 +125,7 @@ export default function TeacherDashboard() {
         } catch (error) {
             console.error("Sync failed", error);
             setToastMessage("Sync Failed. Check internet.");
+            Alert.alert("Failed", "Check internet connection");
         } finally {
             setIsSyncing(false);
         }
@@ -140,8 +155,60 @@ export default function TeacherDashboard() {
     }, [toastMessage]);
 
     const goBack = () => {
-        router.back();
+        if (router.canGoBack()) {
+            router.back();
+        } else {
+            router.replace("/");
+        }
     };
+
+    if (!classId) {
+        return (
+            <View style={styles.container}>
+                <StatusBar style="light" />
+                <View style={styles.header}>
+                    <View>
+                        <Text style={styles.headerTitle}>Select YOUR Class</Text>
+                        <Text style={styles.headerSubtitle}>{schoolName}</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => router.replace("/")} style={styles.backButton}>
+                        <Ionicons name="log-out-outline" size={20} color="#EAEAEA" />
+                        <Text style={styles.backButtonText}>Logout</Text>
+                    </TouchableOpacity>
+                </View>
+
+                <ScrollView style={styles.content}>
+                    {allClasses.length === 0 ? (
+                        <View style={{ marginTop: 50, alignItems: 'center' }}>
+                            <Text style={{ color: '#888', marginBottom: 20 }}>Loading classes...</Text>
+                            <ActivityIndicator size="large" color="#3A86FF" />
+                        </View>
+                    ) : (
+                        allClasses.map(cls => (
+                            <TouchableOpacity
+                                key={cls.id}
+                                onPress={() => {
+                                    router.replace({
+                                        pathname: "/teacher",
+                                        params: {
+                                            schoolId,
+                                            schoolName,
+                                            classId: cls.id,
+                                            className: cls.name,
+                                        },
+                                    });
+                                }}
+                                style={[styles.card, { marginBottom: 12, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
+                            >
+                                <Text style={{ color: 'white', fontSize: 18, fontWeight: '600' }}>{cls.name}</Text>
+                                <Ionicons name="chevron-forward" size={24} color="#666" />
+                            </TouchableOpacity>
+                        ))
+                    )}
+                </ScrollView>
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>
@@ -164,7 +231,9 @@ export default function TeacherDashboard() {
                         ) : (
                             <Ionicons name="sync" size={20} color="#FFF" />
                         )}
-                        <Text style={[styles.backButtonText, { color: '#FFF' }]}>Sync</Text>
+                        <Text style={[styles.backButtonText, { color: '#FFF' }]}>
+                            {isSyncing ? 'Syncing...' : 'Push & Pull'}
+                        </Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={goBack} style={styles.backButton}>
                         <Ionicons name="arrow-back" size={20} color="#EAEAEA" />
@@ -173,34 +242,7 @@ export default function TeacherDashboard() {
                 </View>
             </View>
 
-            {/* In your JSX (e.g., header or bottom bar), add Push button: */}
-            <View style={styles.syncContainer}>
-                <TouchableOpacity
-                    style={[styles.pushButton, isPushing && styles.pushing]}
-                    onPress={async () => {
-                        setIsPushing(true);
-                        try {
-                            // TODO: Implement pushOfflineAttendance in attendanceService
-                            // const { success, errors } = await attendanceService.pushOfflineAttendance();
-                            // if (success > 0) {
-                            //     setToastMessage(`Pushed ${success} records!`);
-                            //     // Refresh attendance
-                            //     attendanceService.getAttendance(classId, today).then(setAttendance);
-                            // }
-                            // if (errors > 0) setToastMessage(`Pushed with ${errors} errors`);
-                        } catch (e) {
-                            setToastMessage("Push failed - check connection");
-                        }
-                        setIsPushing(false);
-                    }}
-                    disabled={unsyncedCount === 0 || isPushing}
-                >
-                    <Ionicons name={isPushing ? "cloud-upload-outline" : "cloud-upload"} size={20} color="white" />
-                    <Text style={styles.pushButtonText}>
-                        {isPushing ? 'Pushing...' : `Push Attendance ${unsyncedCount > 0 ? `(${unsyncedCount})` : ''}`}
-                    </Text>
-                </TouchableOpacity>
-            </View>
+
 
             <ScrollView style={styles.content}>
                 {/* Students List */}
@@ -218,43 +260,71 @@ export default function TeacherDashboard() {
                         <Text style={styles.emptyText}>No students assigned.</Text>
                     ) : (
                         <View style={styles.studentList}>
-                            {students.map((s, idx) => {
-                                const currentStatus = attendance[s.id];
-                                return (
-                                    <View key={s.id} style={styles.studentItem}>
-                                        <View style={styles.studentInfo}>
-                                            <View style={styles.avatar}>
-                                                <Text style={styles.avatarText}>{idx + 1}</Text>
-                                            </View>
-                                            <View>
-                                                <Text style={styles.studentName}>{s.name}</Text>
-                                                <Text style={styles.studentId}>ID: {s.id}</Text>
-                                            </View>
+                            {students.map((s, idx) => (
+                                <View key={s.id} style={styles.studentItem}>
+                                    <View style={styles.studentInfo}>
+                                        <View style={styles.avatar}>
+                                            <Text style={styles.avatarText}>
+                                                {s.name.charAt(0)}
+                                            </Text>
                                         </View>
-
-                                        <View style={styles.actionButtons}>
-                                            {(['present', 'late', 'absent'] as const).map((status) => (
-                                                <TouchableOpacity
-                                                    key={status}
-                                                    style={[
-                                                        styles.actionButton,
-                                                        currentStatus === status && styles.activeActionButton,
-                                                        currentStatus === status && { borderColor: getStatusColor(status) }
-                                                    ]}
-                                                    onPress={() => markAttendance(s.id, status)}
-                                                >
-                                                    <Text style={[
-                                                        styles.actionButtonText,
-                                                        currentStatus === status && { color: getStatusColor(status) }
-                                                    ]}>
-                                                        {status.charAt(0).toUpperCase() + status.slice(1)}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                            ))}
+                                        <View>
+                                            <Text style={styles.studentName}>{s.name}</Text>
+                                            <Text style={styles.studentId}>{s.id}</Text>
                                         </View>
                                     </View>
-                                );
-                            })}
+                                    <View style={styles.actionButtons}>
+                                        <TouchableOpacity
+                                            style={[
+                                                styles.actionButton,
+                                                attendance[s.id] === 'present' && styles.activeActionButton
+                                            ]}
+                                            onPress={() => markAttendance(s.id, 'present')}
+                                        >
+                                            <Text
+                                                style={[
+                                                    styles.actionButtonText,
+                                                    attendance[s.id] === 'present' && { color: '#4CAF50' }
+                                                ]}
+                                            >
+                                                Present
+                                            </Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={[
+                                                styles.actionButton,
+                                                attendance[s.id] === 'late' && styles.activeActionButton
+                                            ]}
+                                            onPress={() => markAttendance(s.id, 'late')}
+                                        >
+                                            <Text
+                                                style={[
+                                                    styles.actionButtonText,
+                                                    attendance[s.id] === 'late' && { color: '#ED6C02' }
+                                                ]}
+                                            >
+                                                Late
+                                            </Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={[
+                                                styles.actionButton,
+                                                attendance[s.id] === 'absent' && styles.activeActionButton
+                                            ]}
+                                            onPress={() => markAttendance(s.id, 'absent')}
+                                        >
+                                            <Text
+                                                style={[
+                                                    styles.actionButtonText,
+                                                    attendance[s.id] === 'absent' && { color: '#D32F2F' }
+                                                ]}
+                                            >
+                                                Absent
+                                            </Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            ))}
                         </View>
                     )}
                 </View>

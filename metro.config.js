@@ -13,4 +13,16 @@ if (config.resolver && Array.isArray(config.resolver.assetExts)) {
   }
 }
 
+// Enable Hermes-specific transforms
+config.transformer = {
+  ...config.transformer,
+  minifierConfig: {
+    ...config.transformer.minifierConfig,
+    mangle: {
+      ...config.transformer.minifierConfig.mangle,
+      reserved: ['__d'],
+    },
+  },
+};
+
 module.exports = config;
