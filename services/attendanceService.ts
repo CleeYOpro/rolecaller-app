@@ -1,6 +1,5 @@
 import { AttendanceStatus, Class, Student } from '@/constants/types';
 import { attendanceLocal, classesLocal, generateUuid, localDb, schoolsLocal, studentsLocal } from '@/database/localdb';
-import { isOnline } from '@/utils/connectivity';
 import { and, eq, sql } from 'drizzle-orm';
 import { api } from './api';
 import { syncPullSchoolData, syncPushAttendance } from './offlineSync';
@@ -57,14 +56,17 @@ export const attendanceService = {
   // ALWAYS save to SQLite — never to Neon directly
   markAttendance: async (studentId: string, classId: string, date: string, status: AttendanceStatus) => {
     try {
-      // Always save to SQLite first
       const existing = await localDb.select()
         .from(attendanceLocal)
         .where(and(eq(attendanceLocal.studentId, studentId), eq(attendanceLocal.date, date)));
 
       if (existing.length > 0) {
         await localDb.update(attendanceLocal)
-          .set({ status, updatedAt: new Date().toISOString(), synced: 'false' })
+          .set({
+            status,
+            updatedAt: new Date().toISOString(),
+            synced: 'false'   // ← ALWAYS false until sync button is pressed
+          })
           .where(eq(attendanceLocal.id, existing[0].id));
       } else {
         await localDb.insert(attendanceLocal).values({
@@ -74,23 +76,13 @@ export const attendanceService = {
           status,
           date,
           updatedAt: new Date().toISOString(),
-          synced: 'false',
+          synced: 'false',   // ← ALWAYS false
         });
       }
 
-      // Try to push immediately if online
-      const online = await isOnline();
-      if (online) {
-        try {
-          await api.markAttendanceRemote(studentId, classId, date, status);
-          await localDb.update(attendanceLocal)
-            .set({ synced: 'true' })
-            .where(and(eq(attendanceLocal.studentId, studentId), eq(attendanceLocal.date, date)));
-        } catch (remoteErr) {
-          console.log('Offline — will sync later');
-          // This is fine! It will sync when Push is clicked
-        }
-      }
+      // Optional: show toast that it's queued
+      console.log('Attendance saved offline — will sync when you press Push & Pull');
+      console.log('Attendance saved to SQLite — synced: false');
     } catch (err: any) {
       console.error('MARK ATTENDANCE ERROR:', err);
       throw new Error(err.message || 'Failed to save attendance');

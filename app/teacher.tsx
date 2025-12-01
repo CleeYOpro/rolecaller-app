@@ -1,6 +1,5 @@
 import { AttendanceStatus, Student } from '@/constants/types';
 import { attendanceService } from '@/services/attendanceService';
-import { storage } from '@/services/storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -94,20 +93,20 @@ export default function TeacherDashboard() {
         setIsSyncing(true);
         setToastMessage("Syncing...");
         try {
-            // 1. Push offline attendance to Neon
             const result = await attendanceService.pushOfflineAttendance();
+            console.log('Push result:', result);
             if (result.success > 0) {
-                Alert.alert("Success", `Pushed ${result.success} attendance records!`);
+                Alert.alert("Success", `Synced ${result.success} records!`);
+            } else if (result.errors > 0) {
+                Alert.alert("Partial Failure", `${result.errors} records failed. Try again.`);
+            } else {
+                Alert.alert("Nothing to Sync", "All data is up to date.");
             }
 
-            // 2. (Optional) Pull fresh classes/students if you want latest data
-            const school = await storage.getSchool();
-            if (school) {
-                await attendanceService.downloadSchoolData(school.id);
-                Alert.alert("Updated", "Latest classes & students downloaded");
-            }
+            await attendanceService.downloadSchoolData(schoolId);
+            Alert.alert("Updated", "Latest data downloaded");
 
-            // Refresh students list
+            // Refresh UI
             if (schoolId) {
                 const updatedStudents = await attendanceService.getStudents(schoolId, classId);
                 setStudents(updatedStudents);
@@ -220,10 +219,10 @@ export default function TeacherDashboard() {
                     <Text style={styles.headerTitle}>Class Dashboard</Text>
                     <Text style={styles.headerSubtitle}>Class: {className}</Text>
                 </View>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
                     <TouchableOpacity
                         onPress={handleSync}
-                        style={[styles.backButton, { backgroundColor: isSyncing ? '#2D2D2D' : '#3A86FF', borderColor: '#3A86FF' }]}
+                        style={[styles.backButton, { backgroundColor: isSyncing ? '#2D2D2D' : '#3A86FF', borderColor: '#3A86FF', paddingHorizontal: 16, position: 'relative' }]}
                         disabled={isSyncing}
                     >
                         {isSyncing ? (
@@ -231,13 +230,18 @@ export default function TeacherDashboard() {
                         ) : (
                             <Ionicons name="sync" size={20} color="#FFF" />
                         )}
-                        <Text style={[styles.backButtonText, { color: '#FFF' }]}>
-                            {isSyncing ? 'Syncing...' : 'Push & Pull'}
+                        <Text style={[styles.backButtonText, { color: '#FFF', marginLeft: 8 }]}>
+                            {isSyncing ? 'Syncing...' : 'Sync'}
                         </Text>
+                        {unsyncedCount > 0 && (
+                            <View style={{ position: 'absolute', right: -6, top: -6, backgroundColor: '#D32F2F', borderRadius: 10, minWidth: 20, height: 20, justifyContent: 'center', alignItems: 'center' }}>
+                                <Text style={{ color: 'white', fontSize: 12, fontWeight: 'bold' }}>{unsyncedCount}</Text>
+                            </View>
+                        )}
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={goBack} style={styles.backButton}>
+                    <TouchableOpacity onPress={goBack} style={[styles.backButton, { paddingHorizontal: 16 }]}>
                         <Ionicons name="arrow-back" size={20} color="#EAEAEA" />
-                        <Text style={styles.backButtonText}>Back</Text>
+                        <Text style={[styles.backButtonText, { marginLeft: 8 }]}>Back</Text>
                     </TouchableOpacity>
                 </View>
             </View>

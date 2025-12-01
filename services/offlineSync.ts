@@ -100,11 +100,10 @@ export const syncPushAttendance = async (): Promise<{ success: number; errors: n
                 date: att.date,
                 status: att.status as "present" | "absent" | "late",
             }).onConflictDoUpdate({
-                target: [attendance.studentId, attendance.classId, attendance.date], // ← FIXED
+                target: [attendance.studentId, attendance.date], // FIXED: matches your schema unique (studentId, date)
                 set: {
                     status: att.status as "present" | "absent" | "late",
-                    classId: att.classId,
-                    updatedAt: new Date()
+                    updatedAt: new Date(),
                 },
             });
 
