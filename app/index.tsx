@@ -8,6 +8,9 @@ import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text
 
 // app/index.tsx - CORRECT imports
 import { attendanceService } from '@/services/attendanceService';
+import TeacherNameInput from './components/TeacherNameInput';
+import { localDb, teachersLocal } from '@/database/localdb';
+import { eq } from 'drizzle-orm';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -15,11 +18,11 @@ export default function LoginPage() {
     const [schools, setSchools] = useState<School[]>([]);
     const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
     const [schoolEmail, setSchoolEmail] = useState("");
-    const [schoolPassword, setSchoolPassword] = useState("password");
+    const [schoolPassword, setSchoolPassword] = useState("");
     const [error, setError] = useState("");
     const [showSchoolPicker, setShowSchoolPicker] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
-
+    const [needsNameInput, setNeedsNameInput] = useState(false);
 
     // Teacher specific
     const [availableClasses, setAvailableClasses] = useState<Class[]>([]);
@@ -50,10 +53,11 @@ export default function LoginPage() {
         setRole(null);
         setSelectedSchool(null);
         setSchoolEmail("");
-        setSchoolPassword("password");
+        setSchoolPassword("");
         setError("");
         setSelectedClass(null);
         setAvailableClasses([]);
+        setNeedsNameInput(false);
     };
 
     const handleTeacherLogin = async () => {
@@ -70,17 +74,67 @@ export default function LoginPage() {
                 return;
             }
 
-            // Safe navigation
-            router.push({
-                pathname: "/teacher",
-                params: {
-                    schoolId: savedSchool.id,
-                    schoolName: savedSchool.name
-                }
-            });
+            // Pre-select the saved school but require password entry
+            const schools = await api.getSchools();
+            const school = schools.find(s => s.id === savedSchool.id);
+            
+            if (school) {
+                setSelectedSchool(school);
+                setSchoolEmail(school.email);
+                setSchoolPassword(""); // Explicitly clear password field for security
+                setShowSchoolPicker(true);
+            } else {
+                // If school not found in API, show picker to select manually
+                setSchoolPassword(""); // Explicitly clear password field for security
+                setShowSchoolPicker(true);
+            }
         } else {
             // First time ever → show school picker
+            setSchoolPassword(""); // Explicitly clear password field for security
             setShowSchoolPicker(true);
+        }
+    };
+
+    const checkTeacherName = async (schoolId: string) => {
+        try {
+            // Check if teacher name already exists for this school
+            const existingTeachers = await localDb
+                .select()
+                .from(teachersLocal)
+                .where(eq(teachersLocal.schoolId, schoolId))
+                .limit(1);
+            
+            if (existingTeachers.length === 0) {
+                // No teacher name found, need to input name
+                setNeedsNameInput(true);
+            } else {
+                // Teacher name exists, continue to class selection
+                try {
+                    const classes = await api.getClasses(schoolId);
+                    if (classes.length === 0) {
+                        Alert.alert("No Classes", "There are no classes set up for this school yet.");
+                    } else {
+                        setAvailableClasses(classes);
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch classes", err);
+                    Alert.alert("Error", "Failed to load classes");
+                }
+            }
+        } catch (error) {
+            console.error("Error checking teacher name:", error);
+            // In case of error, continue to class selection
+            try {
+                const classes = await api.getClasses(schoolId);
+                if (classes.length === 0) {
+                    Alert.alert("No Classes", "There are no classes set up for this school yet.");
+                } else {
+                    setAvailableClasses(classes);
+                }
+            } catch (err) {
+                console.error("Failed to fetch classes", err);
+                Alert.alert("Error", "Failed to load classes");
+            }
         }
     };
 
@@ -119,6 +173,8 @@ export default function LoginPage() {
                                     try {
                                         await attendanceService.downloadSchoolData(selectedSchool.id);
                                         Alert.alert("Success", "You can now work offline!");
+                                        // After downloading data, check if teacher name is needed
+                                        await checkTeacherName(selectedSchool.id);
                                     } catch (err: any) {
                                         Alert.alert("Failed", err.message || "Check internet");
                                     }
@@ -126,19 +182,9 @@ export default function LoginPage() {
                             }
                         ]
                     );
-                }
-
-                // For teacher, after login
-                try {
-                    const classes = await api.getClasses(selectedSchool.id);
-                    if (classes.length === 0) {
-                        Alert.alert("No Classes", "There are no classes set up for this school yet.");
-                    } else {
-                        setAvailableClasses(classes);
-                    }
-                } catch (err) {
-                    console.error("Failed to fetch classes", err);
-                    Alert.alert("Error", "Failed to load classes");
+                } else {
+                    // Already has data, check if teacher name is needed
+                    await checkTeacherName(selectedSchool.id);
                 }
             }
         } catch (err: any) {
@@ -160,6 +206,31 @@ export default function LoginPage() {
             }
         });
     };
+
+    // Render Teacher Name Input Screen
+    if (role === "teacher" && needsNameInput) {
+        return (
+            <TeacherNameInput 
+                schoolId={selectedSchool!.id} 
+                onNameSaved={() => {
+                    setNeedsNameInput(false);
+                    // After saving name, fetch classes
+                    api.getClasses(selectedSchool!.id)
+                        .then(classes => {
+                            if (classes.length === 0) {
+                                Alert.alert("No Classes", "There are no classes set up for this school yet.");
+                            } else {
+                                setAvailableClasses(classes);
+                            }
+                        })
+                        .catch(err => {
+                            console.error("Failed to fetch classes", err);
+                            Alert.alert("Error", "Failed to load classes");
+                        });
+                }} 
+            />
+        );
+    }
 
     // Render Role Selection
     if (!role) {
@@ -358,19 +429,16 @@ const styles = StyleSheet.create({
         gap: 16,
     },
     roleButton: {
-        backgroundColor: '#3A86FF',
-        paddingVertical: 16,
-        paddingHorizontal: 24,
+        backgroundColor: '#1E1E1E',
+        borderWidth: 1,
+        borderColor: '#333',
         borderRadius: 12,
+        padding: 20,
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 4,
-        elevation: 5,
     },
     teacherButton: {
-        backgroundColor: '#181F2A',
+        backgroundColor: '#3A86FF',
+        borderColor: '#3A86FF',
     },
     roleButtonText: {
         color: '#FFFFFF',
@@ -378,34 +446,31 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     card: {
+        backgroundColor: '#1E1E1E',
+        borderRadius: 16,
+        padding: 24,
         width: '100%',
         maxWidth: 400,
-        backgroundColor: '#1C1C1E',
-        borderRadius: 16,
-        padding: 32,
-        gap: 24,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 8,
+        alignItems: 'center',
     },
     cardTitle: {
-        fontSize: 28,
+        fontSize: 24,
         fontWeight: 'bold',
         color: '#FFFFFF',
-        marginBottom: 4,
+        marginBottom: 8,
     },
     cardSubtitle: {
         fontSize: 16,
-        color: '#EAEAEA',
+        color: '#AAAAAA',
+        marginBottom: 24,
+        textAlign: 'center',
     },
     input: {
-        backgroundColor: '#121212',
-        borderWidth: 1,
-        borderColor: '#333',
-        borderRadius: 12,
+        backgroundColor: '#2D2D2D',
+        borderRadius: 8,
         padding: 16,
+        marginBottom: 16,
+        width: '100%',
         color: '#FFFFFF',
         fontSize: 16,
     },
@@ -414,71 +479,50 @@ const styles = StyleSheet.create({
         fontSize: 16,
     },
     placeholderText: {
-        color: '#888',
+        color: '#888888',
     },
     loginButton: {
         backgroundColor: '#3A86FF',
-        paddingVertical: 16,
-        borderRadius: 12,
+        borderRadius: 8,
+        padding: 16,
+        width: '100%',
         alignItems: 'center',
-        marginTop: 8,
+        marginBottom: 16,
+    },
+    disabledButton: {
+        opacity: 0.6,
     },
     loginButtonText: {
-        color: '#FFFFFF',
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    backButton: {
-        backgroundColor: '#181F2A',
-        paddingVertical: 16,
-        borderRadius: 12,
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#3A86FF',
-    },
-    backButtonText: {
-        color: '#FFFFFF',
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    errorText: {
-        color: '#ff4d4f',
-        backgroundColor: '#451A1A',
-        padding: 12,
-        borderRadius: 8,
-        overflow: 'hidden',
-    },
-    classList: {
-        maxHeight: 300,
-        width: '100%',
-    },
-    classButton: {
-        backgroundColor: '#121212',
-        borderWidth: 1,
-        borderColor: '#333',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 12,
-    },
-    classButtonText: {
         color: '#FFFFFF',
         fontSize: 16,
         fontWeight: '600',
     },
+    backButton: {
+        padding: 8,
+    },
+    backButtonText: {
+        color: '#3A86FF',
+        fontSize: 16,
+    },
+    errorText: {
+        color: '#FF6B6B',
+        marginBottom: 16,
+        textAlign: 'center',
+    },
     modalOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.7)',
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
         justifyContent: 'center',
         alignItems: 'center',
         padding: 20,
     },
     modalContent: {
-        width: '100%',
-        maxWidth: 350,
-        backgroundColor: '#1C1C1E',
+        backgroundColor: '#1E1E1E',
         borderRadius: 16,
-        padding: 20,
-        maxHeight: '60%',
+        padding: 24,
+        width: '100%',
+        maxWidth: 400,
+        maxHeight: '80%',
     },
     modalTitle: {
         fontSize: 20,
@@ -488,9 +532,9 @@ const styles = StyleSheet.create({
         textAlign: 'center',
     },
     modalItem: {
-        paddingVertical: 16,
+        padding: 16,
         borderBottomWidth: 1,
-        borderBottomColor: '#2D2D2D',
+        borderBottomColor: '#333',
     },
     modalItemText: {
         color: '#FFFFFF',
@@ -502,11 +546,25 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     modalCloseButtonText: {
-        color: '#3A86FF',
+        color: '#FF6B6B',
         fontSize: 16,
         fontWeight: '600',
     },
-    disabledButton: {
-        opacity: 0.7,
+    classList: {
+        maxHeight: 300,
+        width: '100%',
+        marginBottom: 24,
+    },
+    classButton: {
+        backgroundColor: '#2D2D2D',
+        borderRadius: 8,
+        padding: 16,
+        marginBottom: 12,
+    },
+    classButtonText: {
+        color: '#FFFFFF',
+        fontSize: 18,
+        fontWeight: '500',
+        textAlign: 'center',
     },
 });

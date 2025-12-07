@@ -47,6 +47,14 @@ expoDb.execSync(`
     synced TEXT NOT NULL DEFAULT 'false'
   );
 
+  -- New table for teacher information
+  CREATE TABLE IF NOT EXISTS teachers_local (
+    id TEXT PRIMARY KEY NOT NULL,
+    school_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
   -- Indexes
   CREATE INDEX IF NOT EXISTS idx_students_school ON students_local (school_id);
   CREATE INDEX IF NOT EXISTS idx_students_class ON students_local (class_id);
@@ -98,5 +106,13 @@ export const attendanceLocal = sqliteTable('attendance_local', {
 }, (t) => [
     index('idx_attendance_unique').on(t.studentId, t.date),
 ]);
+
+// New table for teacher information
+export const teachersLocal = sqliteTable('teachers_local', {
+    id: text('id').primaryKey(),
+    schoolId: text('school_id').notNull(),
+    name: text('name').notNull(),
+    createdAt: text('created_at').notNull(),
+});
 
 export const generateUuid = () => uuidv4();

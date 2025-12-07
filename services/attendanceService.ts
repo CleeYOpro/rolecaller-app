@@ -1,5 +1,5 @@
 import { AttendanceStatus, Class, Student } from '@/constants/types';
-import { attendanceLocal, classesLocal, generateUuid, localDb, schoolsLocal, studentsLocal } from '@/database/localdb';
+import { attendanceLocal, classesLocal, generateUuid, localDb, schoolsLocal, studentsLocal, teachersLocal } from '@/database/localdb';
 import { and, eq, sql } from 'drizzle-orm';
 import { api } from './api';
 import { syncPullSchoolData, syncPushAttendance } from './offlineSync';
@@ -126,6 +126,16 @@ export const attendanceService = {
       return result[0]?.count || 0;
     } catch {
       return 0;
+    }
+  },
+  
+  // Check if teacher name exists for a school
+  hasTeacherName: async (schoolId: string): Promise<boolean> => {
+    try {
+      const result = await localDb.select().from(teachersLocal).where(eq(teachersLocal.schoolId, schoolId)).limit(1);
+      return result.length > 0;
+    } catch {
+      return false;
     }
   }
 };
