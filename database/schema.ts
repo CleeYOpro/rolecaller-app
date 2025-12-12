@@ -34,6 +34,7 @@ export const attendance = pgTable('attendance', {
     status: attendanceStatusEnum('status').notNull(),
     date: date('date').notNull(),
     updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => new Date()),
+    teacherName: text('teacher_name'),
 }, (table) => ({
     uniqueStudentDate: unique().on(table.studentId, table.date),
 }));

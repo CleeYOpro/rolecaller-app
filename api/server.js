@@ -360,7 +360,7 @@ const server = http.createServer(async (req, res) => {
       req.on('data', chunk => body += chunk);
       req.on('end', async () => {
         try {
-          const { studentId, classId, date, status } = JSON.parse(body);
+          const { studentId, classId, date, status, teacherName } = JSON.parse(body);
 
           if (!studentId || !classId || !date || !status) {
             return sendJSON(res, 400, { error: 'Missing required fields' });
@@ -368,13 +368,14 @@ const server = http.createServer(async (req, res) => {
 
           // Upsert attendance (using UUID for id, conflict on student_id + date)
           await pool.query(`
-            INSERT INTO attendance (id, student_id, class_id, date, status, updated_at)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW())
+            INSERT INTO attendance (id, student_id, class_id, date, status, updated_at, teacher_name)
+            VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW(), $5)
             ON CONFLICT (student_id, date) 
             DO UPDATE SET 
               status = EXCLUDED.status,
-              updated_at = NOW()
-          `, [studentId, classId, date, status]);
+              updated_at = NOW(),
+              teacher_name = EXCLUDED.teacher_name
+          `, [studentId, classId, date, status, teacherName || null]);
 
           return sendJSON(res, 200, { success: true });
         } catch (err) {

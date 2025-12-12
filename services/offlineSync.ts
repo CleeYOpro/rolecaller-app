@@ -1,5 +1,5 @@
 import { db } from '@/database/client';
-import { attendanceLocal, classesLocal, localDb, schoolsLocal, studentsLocal } from '@/database/localdb';
+import { attendanceLocal, classesLocal, localDb, schoolsLocal, studentsLocal, teachersLocal } from '@/database/localdb';
 import { attendance, classes, schools, students } from '@/database/schema';
 import { eq } from 'drizzle-orm';
 
@@ -94,16 +94,34 @@ export const syncPushAttendance = async (): Promise<{ success: number; errors: n
 
     for (const att of unsynced) {
         try {
+            // Get teacher name for this attendance record
+            let teacherName = att.teacherName;
+            
+            // If teacher name is not already in the local record, fetch it from teachers table
+            if (!teacherName) {
+                const teacherRecords = await localDb
+                    .select()
+                    .from(teachersLocal)
+                    .where(eq(teachersLocal.schoolId, att.classId)) // Assuming classId can be used to find school
+                    .limit(1);
+                
+                if (teacherRecords.length > 0) {
+                    teacherName = teacherRecords[0].name;
+                }
+            }
+
             await db.insert(attendance).values({
                 studentId: att.studentId,
                 classId: att.classId,
                 date: att.date,
                 status: att.status as "present" | "absent" | "late",
+                teacherName: teacherName || null, // Include teacher name in the insert
             }).onConflictDoUpdate({
                 target: [attendance.studentId, attendance.date], // FIXED: matches your schema unique (studentId, date)
                 set: {
                     status: att.status as "present" | "absent" | "late",
                     updatedAt: new Date(),
+                    teacherName: teacherName || null, // Update teacher name as well
                 },
             });
 

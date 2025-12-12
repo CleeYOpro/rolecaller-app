@@ -56,6 +56,27 @@ export const attendanceService = {
   // ALWAYS save to SQLite — never to Neon directly
   markAttendance: async (studentId: string, classId: string, date: string, status: AttendanceStatus) => {
     try {
+      // Get the school ID for this class
+      const classRecords = await localDb.select().from(classesLocal).where(eq(classesLocal.id, classId)).limit(1);
+      let schoolId = '';
+      if (classRecords.length > 0) {
+        schoolId = classRecords[0].schoolId;
+      }
+
+      // Get teacher name for this school
+      let teacherName = null;
+      if (schoolId) {
+        const teacherRecords = await localDb
+          .select()
+          .from(teachersLocal)
+          .where(eq(teachersLocal.schoolId, schoolId))
+          .limit(1);
+        
+        if (teacherRecords.length > 0) {
+          teacherName = teacherRecords[0].name;
+        }
+      }
+
       const existing = await localDb.select()
         .from(attendanceLocal)
         .where(and(eq(attendanceLocal.studentId, studentId), eq(attendanceLocal.date, date)));
@@ -65,7 +86,8 @@ export const attendanceService = {
           .set({
             status,
             updatedAt: new Date().toISOString(),
-            synced: 'false'   // ← ALWAYS false until sync button is pressed
+            synced: 'false',   // ← ALWAYS false until sync button is pressed
+            teacherName // Include teacher name in update
           })
           .where(eq(attendanceLocal.id, existing[0].id));
       } else {
@@ -77,6 +99,7 @@ export const attendanceService = {
           date,
           updatedAt: new Date().toISOString(),
           synced: 'false',   // ← ALWAYS false
+          teacherName // Include teacher name in insert
         });
       }
 

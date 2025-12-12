@@ -72,14 +72,15 @@ export const api = {
         const online = await isOnline();
         if (!online) throw new Error('No internet connection');
         try {
-            console.log('Fetching classes for schoolId:', schoolId);
+            console.log(`Fetching classes for schoolId: ${schoolId}`);
             const result = await db.select({
                 id: classes.id,
                 name: classes.name,
                 schoolId: classes.schoolId,
             }).from(classes).where(eq(classes.schoolId, schoolId));
-            console.log('Successfully fetched classes:', result);
-            return result;
+
+            console.log(`Successfully fetched ${result.length} classes`);
+            return result as Class[];
         } catch (err) {
             console.error('Failed to fetch classes:', err);
             throw new Error('Failed to fetch classes: ' + (err as Error).message);
@@ -90,15 +91,14 @@ export const api = {
         const online = await isOnline();
         if (!online) throw new Error('No internet connection');
         try {
-            // Generate a 5-digit class ID to match the schema
-            const classId = Math.floor(10000 + Math.random() * 90000).toString();
-
+            console.log(`Adding class "${name}" to schoolId: ${schoolId}`);
             const result = await db.insert(classes).values({
-                id: classId,
                 name,
                 schoolId,
             }).returning();
-            return result[0];
+
+            console.log('Successfully added class:', result[0]);
+            return result[0] as Class;
         } catch (err) {
             console.error('Failed to add class:', err);
             throw new Error('Failed to add class: ' + (err as Error).message);
@@ -109,7 +109,9 @@ export const api = {
         const online = await isOnline();
         if (!online) throw new Error('No internet connection');
         try {
+            console.log(`Deleting class with id: ${id}`);
             await db.delete(classes).where(eq(classes.id, id));
+            console.log('Successfully deleted class');
         } catch (err) {
             console.error('Failed to delete class:', err);
             throw new Error('Failed to delete class: ' + (err as Error).message);
@@ -121,57 +123,59 @@ export const api = {
         const online = await isOnline();
         if (!online) throw new Error('No internet connection');
         try {
-            let conditions = eq(students.schoolId, schoolId);
-            if (classId) {
-                conditions = and(eq(students.schoolId, schoolId), eq(students.classId, classId))!;
-            }
+            console.log(`Fetching students for schoolId: ${schoolId}${classId ? `, classId: ${classId}` : ''}`);
+            console.log(`Fetching students for schoolId: ${schoolId}${classId ? `, classId: ${classId}` : ''}`);
+
+            const whereCondition = classId
+                ? and(eq(students.schoolId, schoolId), eq(students.classId, classId))
+                : eq(students.schoolId, schoolId);
 
             const result = await db.select({
                 id: students.id,
                 name: students.name,
+                grade: students.grade,
                 classId: students.classId,
                 schoolId: students.schoolId,
-                grade: students.grade,
-            }).from(students).where(conditions);
+            }).from(students).where(whereCondition);
 
-            return result.map(s => ({
-                id: s.id,
-                name: s.name,
-                classId: s.classId,
-                schoolId: s.schoolId,
-                grade: s.grade
-            }));
+            console.log(`Successfully fetched ${result.length} students`);
+            return result as Student[];
         } catch (err) {
             console.error('Failed to fetch students:', err);
             throw new Error('Failed to fetch students: ' + (err as Error).message);
         }
     },
 
-    addStudent: async (student: Student): Promise<Student> => {
+    addStudent: async (student: Omit<Student, 'id'> & { id: string }): Promise<void> => {
         const online = await isOnline();
         if (!online) throw new Error('No internet connection');
         try {
-            const result = await db.insert(students).values({
+            if (!student.classId) throw new Error("Class ID is required for new students");
+
+            console.log(`Adding student "${student.name}" to classId: ${student.classId}`);
+            await db.insert(students).values({
+                id: student.id,
                 name: student.name,
-                classId: student.classId!,
                 schoolId: student.schoolId,
+                classId: student.classId,
                 grade: student.grade || '',
-            }).returning();
-            return result[0];
+            });
+            console.log('Successfully added student');
         } catch (err) {
             console.error('Failed to add student:', err);
-            throw err instanceof Error ? err : new Error('Failed to add student: ' + (err as Error).message);
+            throw new Error('Failed to add student: ' + (err as Error).message);
         }
     },
 
-    uploadStudents: async (studentsList: any[]): Promise<void> => {
+    uploadStudents: async (studentData: any[]): Promise<void> => {
         const online = await isOnline();
         if (!online) throw new Error('No internet connection');
         try {
-            for (const s of studentsList) {
-                let classId = s.classId;
+            console.log(`Uploading ${studentData.length} students`);
 
+            for (const s of studentData) {
                 // Create class if it doesn't exist
+                let classId = s.classId;
                 if (s.class && !classId) {
                     const existingClass = await db.select().from(classes)
                         .where(and(eq(classes.schoolId, s.schoolId), eq(classes.name, s.class)))
@@ -208,12 +212,14 @@ export const api = {
         const online = await isOnline();
         if (!online) throw new Error('No internet connection');
         try {
+            if (!student.classId) throw new Error("Class ID is required for updating student");
+
             await db.update(students)
                 .set({
                     name: student.name,
                     classId: student.classId,
                     schoolId: student.schoolId,
-                    grade: student.grade,
+                    grade: student.grade || '',
                 })
                 .where(eq(students.id, student.id));
         } catch (err) {
@@ -278,7 +284,13 @@ export const api = {
         }
     },
 
-    markAttendanceRemote: async (studentId: string, classId: string, date: string, status: AttendanceStatus): Promise<void> => {
+    markAttendance: async (
+        studentId: string,
+        classId: string,
+        date: string,
+        status: AttendanceStatus,
+        teacherName?: string
+    ): Promise<void> => {
         const online = await isOnline();
         if (!online) throw new Error('No internet connection');
         try {
@@ -293,7 +305,7 @@ export const api = {
             if (existing.length > 0) {
                 // Update
                 await db.update(attendance)
-                    .set({ status, updatedAt: new Date() })
+                    .set({ status, updatedAt: new Date(), teacherName })
                     .where(eq(attendance.id, existing[0].id as string));
             } else {
                 // Insert
@@ -302,6 +314,7 @@ export const api = {
                     classId,
                     date,
                     status,
+                    teacherName,
                 });
             }
         } catch (err) {
