@@ -7,10 +7,10 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // app/index.tsx - CORRECT imports
-import { attendanceService } from '@/services/attendanceService';
-import TeacherNameInput from './components/TeacherNameInput';
 import { localDb, teachersLocal } from '@/database/localdb';
+import { attendanceService } from '@/services/attendanceService';
 import { eq } from 'drizzle-orm';
+import TeacherNameInput from './components/TeacherNameInput';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -77,7 +77,7 @@ export default function LoginPage() {
             // Pre-select the saved school but require password entry
             const schools = await api.getSchools();
             const school = schools.find(s => s.id === savedSchool.id);
-            
+
             if (school) {
                 setSelectedSchool(school);
                 setSchoolEmail(school.email);
@@ -103,7 +103,7 @@ export default function LoginPage() {
                 .from(teachersLocal)
                 .where(eq(teachersLocal.schoolId, schoolId))
                 .limit(1);
-            
+
             if (existingTeachers.length === 0) {
                 // No teacher name found, need to input name
                 setNeedsNameInput(true);
@@ -210,8 +210,8 @@ export default function LoginPage() {
     // Render Teacher Name Input Screen
     if (role === "teacher" && needsNameInput) {
         return (
-            <TeacherNameInput 
-                schoolId={selectedSchool!.id} 
+            <TeacherNameInput
+                schoolId={selectedSchool!.id}
                 onNameSaved={() => {
                     setNeedsNameInput(false);
                     // After saving name, fetch classes
@@ -227,7 +227,7 @@ export default function LoginPage() {
                             console.error("Failed to fetch classes", err);
                             Alert.alert("Error", "Failed to load classes");
                         });
-                }} 
+                }}
             />
         );
     }

@@ -24,7 +24,7 @@
     "@react-navigation/native-stack": "^7.6.4",
     "babel-preset-expo": "^54.0.7",
     "dotenv": "^16.6.1",
-    "drizzle-kit": "^0.31.7",
+    "drizzle-kit": "^0.31.8",
     "drizzle-orm": "^0.44.7",
     "expo": "~54.0.25",
     "expo-constants": "~18.0.10",
