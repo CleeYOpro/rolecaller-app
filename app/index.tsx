@@ -4,7 +4,7 @@ import { storage } from '@/services/storage';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // app/index.tsx - CORRECT imports
 import { localDb, teachersLocal } from '@/database/localdb';
@@ -23,6 +23,7 @@ export default function LoginPage() {
     const [showSchoolPicker, setShowSchoolPicker] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [needsNameInput, setNeedsNameInput] = useState(false);
+    const [showPassword, setShowPassword] = useState(false); // New state for password visibility
 
     // Teacher specific
     const [availableClasses, setAvailableClasses] = useState<Class[]>([]);
@@ -298,69 +299,84 @@ export default function LoginPage() {
 
     // Render Login Form
     return (
-        <View style={styles.container}>
+        <KeyboardAvoidingView
+            style={styles.container}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
             <StatusBar style="light" />
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>
-                    {role === "admin" ? "Admin Login" : "Teacher Login"}
-                </Text>
-                <Text style={styles.cardSubtitle}>Login with school credentials</Text>
-
-                {/* School Picker Trigger */}
-                <TouchableOpacity
-                    style={styles.input}
-                    onPress={() => setShowSchoolPicker(true)}
-                >
-                    <Text style={[styles.inputText, !selectedSchool && styles.placeholderText]}>
-                        {selectedSchool ? selectedSchool.name : "Select a school"}
+            <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle}>
+                        {role === "admin" ? "Admin Login" : "Teacher Login"}
                     </Text>
-                </TouchableOpacity>
+                    <Text style={styles.cardSubtitle}>Login with school credentials</Text>
 
-                {schools.length === 0 && (
-                    <TouchableOpacity onPress={fetchSchools} style={{ marginBottom: 16 }}>
-                        <Text style={{ color: '#3A86FF', textAlign: 'center' }}>
-                            No schools found. Tap to retry connection.
+                    {/* School Picker Trigger */}
+                    <TouchableOpacity
+                        style={styles.input}
+                        onPress={() => setShowSchoolPicker(true)}
+                    >
+                        <Text style={[styles.inputText, !selectedSchool && styles.placeholderText]}>
+                            {selectedSchool ? selectedSchool.name : "Select a school"}
                         </Text>
                     </TouchableOpacity>
-                )}
 
-                <TextInput
-                    style={styles.input}
-                    placeholder="School email"
-                    placeholderTextColor="#888"
-                    value={schoolEmail}
-                    onChangeText={setSchoolEmail}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                />
-
-                <TextInput
-                    style={styles.input}
-                    placeholder="Password"
-                    placeholderTextColor="#888"
-                    value={schoolPassword}
-                    onChangeText={setSchoolPassword}
-                    secureTextEntry
-                />
-
-                {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-                <TouchableOpacity
-                    style={[styles.loginButton, isLoading && styles.disabledButton]}
-                    onPress={handleLogin}
-                    disabled={isLoading}
-                >
-                    {isLoading ? (
-                        <ActivityIndicator color="#FFF" />
-                    ) : (
-                        <Text style={styles.loginButtonText}>Login</Text>
+                    {schools.length === 0 && (
+                        <TouchableOpacity onPress={fetchSchools} style={{ marginBottom: 16 }}>
+                            <Text style={{ color: '#3A86FF', textAlign: 'center' }}>
+                                No schools found. Tap to retry connection.
+                            </Text>
+                        </TouchableOpacity>
                     )}
-                </TouchableOpacity>
 
-                <TouchableOpacity style={styles.backButton} onPress={goBack}>
-                    <Text style={styles.backButtonText}>Back</Text>
-                </TouchableOpacity>
-            </View>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="School email"
+                        placeholderTextColor="#888"
+                        value={schoolEmail}
+                        onChangeText={setSchoolEmail}
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                    />
+
+                    <View style={styles.passwordContainer}>
+                        <TextInput
+                            style={styles.passwordInput}
+                            placeholder="Password"
+                            placeholderTextColor="#888"
+                            value={schoolPassword}
+                            onChangeText={setSchoolPassword}
+                            secureTextEntry={!showPassword}
+                        />
+                        <TouchableOpacity
+                            style={styles.eyeIcon}
+                            onPress={() => setShowPassword(!showPassword)}
+                        >
+                            <Text style={styles.eyeIconText}>
+                                {showPassword ? '👁️' : '👁️‍🗨️'}
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+                    <TouchableOpacity
+                        style={[styles.loginButton, isLoading && styles.disabledButton]}
+                        onPress={handleLogin}
+                        disabled={isLoading}
+                    >
+                        {isLoading ? (
+                            <ActivityIndicator color="#FFF" />
+                        ) : (
+                            <Text style={styles.loginButtonText}>Login</Text>
+                        )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.backButton} onPress={goBack}>
+                        <Text style={styles.backButtonText}>Back</Text>
+                    </TouchableOpacity>
+                </View>
+            </ScrollView>
 
             {/* School Picker Modal */}
             <Modal
@@ -397,7 +413,7 @@ export default function LoginPage() {
                     </View>
                 </View>
             </Modal>
-        </View>
+        </KeyboardAvoidingView>
     );
 }
 
@@ -405,6 +421,12 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#121212',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    scrollContent: {
+        flexGrow: 1,
         justifyContent: 'center',
         alignItems: 'center',
         padding: 20,
@@ -508,6 +530,26 @@ const styles = StyleSheet.create({
         color: '#FF6B6B',
         marginBottom: 16,
         textAlign: 'center',
+    },
+    passwordContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#2D2D2D',
+        borderRadius: 8,
+        marginBottom: 16,
+        width: '100%',
+    },
+    passwordInput: {
+        flex: 1,
+        padding: 16,
+        color: '#FFFFFF',
+        fontSize: 16,
+    },
+    eyeIcon: {
+        padding: 16,
+    },
+    eyeIconText: {
+        fontSize: 18,
     },
     modalOverlay: {
         flex: 1,

@@ -57,7 +57,6 @@ export default function Admin() {
 
     // Student management state
     const [studentName, setStudentName] = useState("");
-    const [studentId, setStudentId] = useState("");
     const [studentGrade, setStudentGrade] = useState("");
     const [studentClass, setStudentClass] = useState("");
 
@@ -242,16 +241,21 @@ export default function Admin() {
 
     const addStudent = async () => {
         const name = studentName.trim();
-        const id = studentId.trim();
         const grade = studentGrade.trim();
+        const classId = studentClass;
 
-        if (!name || !id) {
-            Alert.alert("Error", "Name and ID are required");
+        if (!name) {
+            Alert.alert("Error", "Name is required");
             return;
         }
 
-        const cls = classes.find(c => c.id === studentClass);
-        const classId = cls?.id;
+        if (!classId) {
+            Alert.alert("Error", "Class is required");
+            return;
+        }
+
+        // Generate a random ID for the student
+        const id = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
         try {
             if (!classId || !selectedClass) return;
@@ -264,7 +268,7 @@ export default function Admin() {
             });
 
             setStudentName("");
-            setStudentId("");
+
             setStudentGrade("");
             setStudentClass("");
             Alert.alert("Success", "Student added successfully");
@@ -587,14 +591,7 @@ export default function Admin() {
                                         />
                                         <TextInput
                                             style={styles.input}
-                                            placeholder="Student ID"
-                                            placeholderTextColor="#888"
-                                            value={studentId}
-                                            onChangeText={setStudentId}
-                                        />
-                                        <TextInput
-                                            style={styles.input}
-                                            placeholder="Grade (optional)"
+                                            placeholder="Grade"
                                             placeholderTextColor="#888"
                                             value={studentGrade}
                                             onChangeText={setStudentGrade}
@@ -620,7 +617,7 @@ export default function Admin() {
                                     <View style={styles.formCard}>
                                         <Text style={styles.formTitle}>Upload Students from CSV</Text>
                                         <Text style={styles.helperText}>
-                                            CSV format: name,number,class (class is optional)
+                                            CSV format: name,standard,class
                                         </Text>
                                         <TouchableOpacity
                                             style={styles.uploadButton}

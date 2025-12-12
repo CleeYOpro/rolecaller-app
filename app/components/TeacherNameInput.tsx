@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
-import { localDb, teachersLocal, generateUuid } from '@/database/localdb';
+import { generateUuid, localDb, teachersLocal } from '@/database/localdb';
 import { eq } from 'drizzle-orm';
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 interface TeacherNameInputProps {
   schoolId: string;
@@ -57,35 +57,40 @@ export default function TeacherNameInput({ schoolId, onNameSaved }: TeacherNameI
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.title}>Welcome Teacher!</Text>
-        <Text style={styles.subtitle}>Please enter your name to continue</Text>
-        
-        <TextInput
-          style={styles.input}
-          placeholder="Your Name"
-          placeholderTextColor="#888"
-          value={teacherName}
-          onChangeText={setTeacherName}
-          autoCapitalize="words"
-        />
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <View style={styles.card}>
+          <Text style={styles.title}>Welcome Teacher!</Text>
+          <Text style={styles.subtitle}>Please enter your name to continue</Text>
 
-        <TouchableOpacity
-          style={[styles.button, isLoading && styles.disabledButton]}
-          onPress={handleSaveName}
-          disabled={isLoading}
-        >
-          <Text style={styles.buttonText}>
-            {isLoading ? 'Saving...' : 'Continue'}
-          </Text>
-        </TouchableOpacity>
+          <TextInput
+            style={styles.input}
+            placeholder="Your Name"
+            placeholderTextColor="#888"
+            value={teacherName}
+            onChangeText={setTeacherName}
+            autoCapitalize="words"
+          />
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+          <TouchableOpacity
+            style={[styles.button, isLoading && styles.disabledButton]}
+            onPress={handleSaveName}
+            disabled={isLoading}
+          >
+            <Text style={styles.buttonText}>
+              {isLoading ? 'Saving...' : 'Continue'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <Text style={styles.logoutText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -93,6 +98,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#121212',
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,

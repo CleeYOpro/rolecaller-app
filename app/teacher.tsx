@@ -1,4 +1,4 @@
-import { AttendanceStatus, Student } from '@/constants/types';
+import { AttendanceStatus, Class, Student } from '@/constants/types';
 import { attendanceService } from '@/services/attendanceService';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -20,7 +20,7 @@ export default function TeacherDashboard() {
     // State
     const [students, setStudents] = useState<Student[]>([]);
     const [allStudents, setAllStudents] = useState<Student[]>([]);
-    const [allClasses, setAllClasses] = useState<any[]>([]);
+    const [allClasses, setAllClasses] = useState<Class[]>([]);
     const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -28,7 +28,6 @@ export default function TeacherDashboard() {
 
     // Add state
     const [unsyncedCount, setUnsyncedCount] = useState(0);
-    const [isPushing, setIsPushing] = useState(false);
 
     // Add effect to watch unsynced
     useEffect(() => {
@@ -95,12 +94,19 @@ export default function TeacherDashboard() {
         try {
             const result = await attendanceService.pushOfflineAttendance();
             console.log('Push result:', result);
-            if (result.success > 0) {
-                Alert.alert("Success", `Synced ${result.success} records!`);
-            } else if (result.errors > 0) {
-                Alert.alert("Partial Failure", `${result.errors} records failed. Try again.`);
+
+            if (result.success) {
+                // @ts-ignore
+                const pushed = result.pushed || 0;
+                if (pushed > 0) {
+                    Alert.alert("Success", `Synced ${pushed} records!`);
+                } else {
+                    Alert.alert("Nothing to Sync", "All data is up to date.");
+                }
             } else {
-                Alert.alert("Nothing to Sync", "All data is up to date.");
+                // @ts-ignore
+                const errorMessage = result.error || "Unknown error";
+                Alert.alert("Sync Failed", errorMessage);
             }
 
             await attendanceService.downloadSchoolData(schoolId);
@@ -128,22 +134,6 @@ export default function TeacherDashboard() {
         } finally {
             setIsSyncing(false);
         }
-    };
-
-    const handleStudentUpdate = (updatedStudent: Student) => {
-        // Update the students list with the modified student
-        setStudents(prevStudents =>
-            prevStudents.map(student =>
-                student.id === updatedStudent.id ? updatedStudent : student
-            )
-        );
-
-        // Also update the allStudents list
-        setAllStudents(prevAllStudents =>
-            prevAllStudents.map(student =>
-                student.id === updatedStudent.id ? updatedStudent : student
-            )
-        );
     };
 
     useEffect(() => {
@@ -215,14 +205,14 @@ export default function TeacherDashboard() {
 
             {/* Header */}
             <View style={styles.header}>
-                <View>
-                    <Text style={styles.headerTitle}>Class Dashboard</Text>
-                    <Text style={styles.headerSubtitle}>Class: {className}</Text>
+                <View style={{ flex: 1, marginRight: 10 }}>
+                    <Text style={styles.headerTitle} numberOfLines={1}>Class Dashboard</Text>
+                    <Text style={styles.headerSubtitle} numberOfLines={1}>Class: {className}</Text>
                 </View>
-                <View style={{ flexDirection: 'row', gap: 12 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
                     <TouchableOpacity
                         onPress={handleSync}
-                        style={[styles.backButton, { backgroundColor: isSyncing ? '#2D2D2D' : '#3A86FF', borderColor: '#3A86FF', paddingHorizontal: 16, position: 'relative' }]}
+                        style={[styles.backButton, { backgroundColor: isSyncing ? '#2D2D2D' : '#3A86FF', borderColor: '#3A86FF', width: 40, height: 40, justifyContent: 'center', paddingHorizontal: 0, position: 'relative' }]}
                         disabled={isSyncing}
                     >
                         {isSyncing ? (
@@ -230,18 +220,14 @@ export default function TeacherDashboard() {
                         ) : (
                             <Ionicons name="sync" size={20} color="#FFF" />
                         )}
-                        <Text style={[styles.backButtonText, { color: '#FFF', marginLeft: 8 }]}>
-                            {isSyncing ? 'Syncing...' : 'Sync'}
-                        </Text>
                         {unsyncedCount > 0 && (
                             <View style={{ position: 'absolute', right: -6, top: -6, backgroundColor: '#D32F2F', borderRadius: 10, minWidth: 20, height: 20, justifyContent: 'center', alignItems: 'center' }}>
                                 <Text style={{ color: 'white', fontSize: 12, fontWeight: 'bold' }}>{unsyncedCount}</Text>
                             </View>
                         )}
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={goBack} style={[styles.backButton, { paddingHorizontal: 16 }]}>
+                    <TouchableOpacity onPress={goBack} style={[styles.backButton, { width: 40, height: 40, justifyContent: 'center', paddingHorizontal: 0 }]}>
                         <Ionicons name="arrow-back" size={20} color="#EAEAEA" />
-                        <Text style={[styles.backButtonText, { marginLeft: 8 }]}>Back</Text>
                     </TouchableOpacity>
                 </View>
             </View>
