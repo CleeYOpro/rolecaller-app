@@ -44,8 +44,7 @@ expoDb.execSync(`
     status TEXT NOT NULL,
     date TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    synced TEXT NOT NULL DEFAULT 'false',
-    teacher_name TEXT
+    synced TEXT NOT NULL DEFAULT 'false'
   );
 
   -- New table for teacher information
@@ -95,7 +94,6 @@ export const studentsLocal = sqliteTable('students_local', {
     index('idx_students_class').on(t.classId),
 ]);
 
-
 export const attendanceLocal = sqliteTable('attendance_local', {
     id: text('id').primaryKey(),
     studentId: text('student_id').notNull(),
@@ -104,7 +102,6 @@ export const attendanceLocal = sqliteTable('attendance_local', {
     date: text('date').notNull(),
     updatedAt: text('updated_at').notNull(),
     synced: text('synced').notNull().default('false'),
-    teacherName: text('teacher_name'),
 }, (t) => [
     index('idx_attendance_unique').on(t.studentId, t.date),
 ]);

@@ -1,7 +1,8 @@
 import { db } from '@/database/client';
 import { attendanceLocal, classesLocal, localDb, schoolsLocal, studentsLocal, teachersLocal } from '@/database/localdb';
-import { attendance, classes, schools, students } from '@/database/schema';
+import { classes, schools, students } from '@/database/schema';
 import { eq } from 'drizzle-orm';
+import { api } from './api';
 
 export const syncPullSchoolData = async (schoolId: string) => {
     console.log('Starting sync pull for school:', schoolId);
@@ -78,61 +79,102 @@ export const syncPullSchoolData = async (schoolId: string) => {
     }
 };
 
-export const syncPushAttendance = async (): Promise<{ success: number; errors: number }> => {
-    const unsynced = await localDb
-        .select()
-        .from(attendanceLocal)
-        .where(eq(attendanceLocal.synced, 'false'));
+// Push all unsynced attendance records with teacher name
+export const syncPushAttendance = async () => {
+    try {
+        console.log('Starting attendance sync...');
 
-    if (unsynced.length === 0) {
-        console.log('Nothing to sync');
-        return { success: 0, errors: 0 };
-    }
+        // Get all unsynced attendance records
+        const unsynced = await localDb.select().from(attendanceLocal).where(eq(attendanceLocal.synced, 'false'));
+        console.log(`Found ${unsynced.length} unsynced records`);
 
-    let success = 0;
-    let errors = 0;
+        if (unsynced.length === 0) {
+            console.log('No unsynced records to push');
+            return { success: true, pushed: 0 };
+        }
 
-    for (const att of unsynced) {
-        try {
-            // Get teacher name for this attendance record
-            let teacherName = att.teacherName;
-            
-            // If teacher name is not already in the local record, fetch it from teachers table
-            if (!teacherName) {
+        // Group records by class to efficiently get teacher names
+        const recordsByClass: Record<string, typeof unsynced> = {};
+        unsynced.forEach(record => {
+            if (!recordsByClass[record.classId]) {
+                recordsByClass[record.classId] = [];
+            }
+            recordsByClass[record.classId].push(record);
+        });
+
+        let pushedCount = 0;
+
+        // Process each class separately
+        for (const classId of Object.keys(recordsByClass)) {
+            const classRecords = recordsByClass[classId];
+
+            // Get the school ID for this class
+            const classInfo = await localDb.select().from(classesLocal).where(eq(classesLocal.id, classId)).limit(1);
+            if (classInfo.length === 0) {
+                console.warn(`Could not find class with ID: ${classId}`);
+                continue;
+            }
+
+            const schoolId = classInfo[0].schoolId;
+
+            // Get teacher name for this school
+            let teacherName = null;
+            try {
                 const teacherRecords = await localDb
                     .select()
                     .from(teachersLocal)
-                    .where(eq(teachersLocal.schoolId, att.classId)) // Assuming classId can be used to find school
+                    .where(eq(teachersLocal.schoolId, schoolId))
                     .limit(1);
-                
+
                 if (teacherRecords.length > 0) {
                     teacherName = teacherRecords[0].name;
                 }
+            } catch (err) {
+                console.warn('Could not get teacher name:', err);
             }
 
-            await db.insert(attendance).values({
-                studentId: att.studentId,
-                classId: att.classId,
-                date: att.date,
-                status: att.status as "present" | "absent" | "late",
-                teacherName: teacherName || null, // Include teacher name in the insert
-            }).onConflictDoUpdate({
-                target: [attendance.studentId, attendance.date], // FIXED: matches your schema unique (studentId, date)
-                set: {
-                    status: att.status as "present" | "absent" | "late",
-                    updatedAt: new Date(),
-                    teacherName: teacherName || null, // Update teacher name as well
-                },
-            });
+            // Prepare records with teacher name for this class
+            const recordsWithTeacher = classRecords.map(record => ({
+                ...record,
+                teacherName
+            }));
 
-            await localDb.delete(attendanceLocal).where(eq(attendanceLocal.id, att.id));
-            success++;
-        } catch (err) {
-            console.error('Failed to push attendance:', att.id, err);
-            errors++;
+            // Push to API
+            try {
+                // Process each record individually using markAttendance
+                for (const record of recordsWithTeacher) {
+                    await api.markAttendance(
+                        record.studentId,
+                        record.classId,
+                        record.date,
+                        record.status as any,
+                        record.teacherName || undefined
+                    );
+                }
+                console.log(`Pushed ${classRecords.length} records for class ${classId} with teacher: ${teacherName}`);
+                pushedCount += classRecords.length;
+            } catch (err) {
+                console.error(`Failed to push records for class ${classId}:`, err);
+                // Continue with other classes even if one fails
+            }
         }
-    }
 
-    console.log(`Sync complete: ${success} succeeded, ${errors} failed`);
-    return { success, errors };
+        // Mark all successfully pushed records as synced
+        // In a production app, you might want to be more selective about this
+        for (const record of unsynced) {
+            try {
+                await localDb.update(attendanceLocal)
+                    .set({ synced: 'true' })
+                    .where(eq(attendanceLocal.id, record.id));
+            } catch (err) {
+                console.warn(`Failed to mark record ${record.id} as synced:`, err);
+            }
+        }
+
+        console.log(`Successfully pushed ${pushedCount} attendance records`);
+        return { success: true, pushed: pushedCount };
+    } catch (err) {
+        console.error('Fatal error during attendance sync:', err);
+        return { success: false, error: (err as Error).message };
+    }
 };

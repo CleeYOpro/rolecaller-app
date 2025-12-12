@@ -3,6 +3,7 @@ import { db } from '@/database/client';
 import { attendance, classes, schools, students } from '@/database/schema';
 import { isOnline } from '@/utils/connectivity';
 import { and, eq } from 'drizzle-orm';
+import { v4 as uuidv4 } from 'uuid';
 
 // Serverless: Direct database access via Neon HTTP
 export const api = {
@@ -184,10 +185,8 @@ export const api = {
                     if (existingClass.length > 0) {
                         classId = existingClass[0].id;
                     } else {
-                        // Generate a 5-digit class ID
-                        const newClassId = Math.floor(10000 + Math.random() * 90000).toString();
+                        // Create new class
                         const newClass = await db.insert(classes).values({
-                            id: newClassId,
                             name: s.class,
                             schoolId: s.schoolId,
                         }).returning();
@@ -195,7 +194,11 @@ export const api = {
                     }
                 }
 
+                // Generate proper UUID for student if not provided
+                const studentId = s.id || uuidv4();
+
                 await db.insert(students).values({
+                    id: studentId,
                     name: s.name,
                     classId: classId,
                     schoolId: s.schoolId,

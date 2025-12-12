@@ -7,6 +7,38 @@ import React, { useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import StudentSearchOverview from './components/StudentSearchOverview';
 
+// Helper function to properly parse CSV lines with quoted values
+const parseCSVLine = (line: string): string[] => {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+
+        if (char === '"') {
+            if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
+                // Double quotes inside quoted field
+                current += '"';
+                i++; // Skip next quote
+            } else {
+                // Toggle quote state
+                inQuotes = !inQuotes;
+            }
+        } else if (char === ',' && !inQuotes) {
+            // End of field
+            result.push(current.trim());
+            current = '';
+        } else {
+            current += char;
+        }
+    }
+
+    // Push the last field
+    result.push(current.trim());
+    return result;
+};
+
 export default function Admin() {
     const router = useRouter();
     const [classId, setClassId] = useState<string | null>(null);
@@ -47,51 +79,66 @@ export default function Admin() {
             let currentClassId = classId;
             let currentClass: Class | null = selectedClass;
 
-            if (!currentClassId || !currentClass) {
-                const schools = await api.getSchools();
-                console.log("Fetched schools:", schools);
-                if (schools.length > 0) {
-                    const schoolId = schools[0].id;
-                    setSchoolName(schools[0].name);
-                    const cls = await api.getClasses(schoolId);
-                    setClasses(cls);
-                    if (cls.length > 0) {
+            const schools = await api.getSchools();
+            console.log("Fetched schools:", schools);
+            if (schools.length > 0) {
+                const schoolId = schools[0].id;
+                setSchoolName(schools[0].name);
+                const cls = await api.getClasses(schoolId);
+                setClasses(cls);
+
+                // Update the current class if it still exists, otherwise select the first available class
+                if (currentClassId) {
+                    const updatedCurrentClass = cls.find(c => c.id === currentClassId);
+                    if (updatedCurrentClass) {
+                        setSelectedClass(updatedCurrentClass);
+                    } else if (cls.length > 0) {
+                        // Class was deleted, select first available class
                         currentClass = cls[0];
                         currentClassId = cls[0].id;
                         setClassId(currentClassId);
                         setSelectedClass(currentClass);
                     } else {
-                        // Instead of showing an alert and returning, we'll just set empty classes
-                        // This allows the admin to access the portal and create classes
-                        console.warn("No classes found");
+                        // No classes left
                         setClassId(null);
                         setSelectedClass(null);
                     }
+                } else if (cls.length > 0) {
+                    // Select the first class if none currently selected
+                    currentClass = cls[0];
+                    currentClassId = cls[0].id;
+                    setClassId(currentClassId);
+                    setSelectedClass(currentClass);
                 } else {
-                    console.warn("No schools found");
-                    Alert.alert(
-                        "No Schools Found",
-                        "No schools are available. Please make sure the API server is running and the database has been seeded.",
-                        [{ text: "OK" }]
-                    );
-                    return;
+                    // No classes found
+                    console.warn("No classes found");
+                    setClassId(null);
+                    setSelectedClass(null);
                 }
-            }
 
-            // Only fetch students and attendance if we have a valid class
-            if (currentClassId && currentClass) {
-                // Use classId's schoolId for student queries
-                // FETCH ALL STUDENTS for the school, not just for one class
-                const studs = await api.getStudents(currentClass.schoolId);
-                setStudents(studs);
+                // Only fetch students and attendance if we have a valid class
+                if (currentClassId && currentClass) {
+                    // Use classId's schoolId for student queries
+                    // FETCH ALL STUDENTS for the school, not just for one class
+                    const studs = await api.getStudents(currentClass.schoolId);
+                    setStudents(studs);
 
-                // Get attendance for all classes (including any new ones)
-                const attMap: AttendanceMap = {};
-                for (const c of classes) {
-                    const att = await api.getAllAttendance(c.id);
-                    attMap[c.id] = att;
+                    // Get attendance for all classes (including any new ones)
+                    const attMap: AttendanceMap = {};
+                    for (const c of cls) { // Use the freshly fetched classes list
+                        const att = await api.getAllAttendance(c.id);
+                        attMap[c.id] = att;
+                    }
+                    setAttendance(attMap);
                 }
-                setAttendance(attMap);
+            } else {
+                console.warn("No schools found");
+                Alert.alert(
+                    "No Schools Found",
+                    "No schools are available. Please make sure the API server is running and the database has been seeded.",
+                    [{ text: "OK" }]
+                );
+                return;
             }
         } catch (err) {
             console.error("Failed to fetch admin data", err);
@@ -159,7 +206,7 @@ export default function Admin() {
                         console.log("Confirm delete class:", classId);
                         await api.deleteClass(classId);
                         console.log("Class deleted successfully");
-                        refreshData();
+                        await refreshData(); // Wait for refresh to complete
                     } catch (err) {
                         console.error("Failed to delete class:", err);
                         alert("Failed to delete class");
@@ -182,7 +229,7 @@ export default function Admin() {
                             console.log("Confirm delete class:", classId);
                             await api.deleteClass(classId);
                             console.log("Class deleted successfully");
-                            refreshData();
+                            await refreshData(); // Wait for refresh to complete
                         } catch (err) {
                             console.error("Failed to delete class:", err);
                             Alert.alert("Error", "Failed to delete class");
@@ -277,61 +324,85 @@ export default function Admin() {
             const file = result.assets[0];
             const content = await fetch(file.uri).then(r => r.text());
 
-            const lines = content.split('\n');
-            const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-
-            if (!selectedClass) {
-                setUploadMessage("❌ No class selected");
+            const lines = content.split('\n').filter(line => line.trim() !== '');
+            if (lines.length < 2) {
+                setUploadMessage("❌ CSV file is empty or invalid");
                 setUploading(false);
                 return;
             }
 
+            const headers = lines[0].split(',').map(h => h.trim());
+
+            // Validate required columns
+            const nameColIndex = headers.findIndex(h => h.toLowerCase() === 'name');
+            const gradeColIndex = headers.findIndex(h => h.toLowerCase() === 'grade');
+            const classColIndex = headers.findIndex(h => h.toLowerCase() === 'class');
+
+            if (nameColIndex === -1 || gradeColIndex === -1 || classColIndex === -1) {
+                setUploadMessage("❌ CSV must contain columns: Name, Grade, Class");
+                setUploading(false);
+                return;
+            }
+
+            // Get school info - either from selected class or fetch schools
+            let schoolId;
+            if (selectedClass) {
+                schoolId = selectedClass.schoolId;
+            } else {
+                const schools = await api.getSchools();
+                if (schools.length === 0) {
+                    setUploadMessage("❌ No schools found");
+                    setUploading(false);
+                    return;
+                }
+                schoolId = schools[0].id;
+            }
+
             const studentsToUpload = [];
-            const classNames = new Set<string>(); // To track unique class names from CSV
+            const classNames = new Set<string>();
 
             for (let i = 1; i < lines.length; i++) {
                 const line = lines[i].trim();
                 if (!line) continue;
-                const values = line.split(',').map(v => v.trim());
-                if (values.length < 2) continue;
 
-                const student: any = {
-                    schoolId: selectedClass.schoolId,
+                // Handle quoted values and split properly
+                const values = parseCSVLine(line);
+                if (values.length < Math.max(nameColIndex, gradeColIndex, classColIndex) + 1) continue;
+
+                const name = values[nameColIndex]?.trim();
+                const grade = values[gradeColIndex]?.trim();
+                const className = values[classColIndex]?.trim();
+
+                // Skip rows with missing required data
+                if (!name || !className) continue;
+
+                const student = {
+                    name,
+                    grade: grade || "",
+                    class: className,
+                    schoolId: schoolId,
                 };
 
-                headers.forEach((h, idx) => {
-                    if (values[idx]) {
-                        if (h === 'number') {
-                            student.id = values[idx];
-                        } else {
-                            student[h] = values[idx];
-                        }
-                    }
-                });
-
-                // Track class names for automatic creation
-                if (student.class) {
-                    classNames.add(student.class);
-                }
-
-                if (student.name && student.id) {
-                    studentsToUpload.push(student);
-                }
+                classNames.add(className);
+                studentsToUpload.push(student);
             }
 
             if (studentsToUpload.length > 0) {
                 // Create a mapping of class names to class IDs
                 const classMapping: Record<string, string> = {};
 
+                // Get all existing classes for this school
+                const allClasses = await api.getClasses(schoolId);
+
                 // Create classes that don't exist yet
                 for (const className of Array.from(classNames)) {
-                    const existingClass = classes.find(c => c.name.toLowerCase() === className.toLowerCase());
+                    const existingClass = allClasses.find(c => c.name === className);
                     if (existingClass) {
                         classMapping[className] = existingClass.id;
                     } else {
                         // Create new class
                         try {
-                            const newClass = await api.addClass(className, selectedClass.schoolId);
+                            const newClass = await api.addClass(className, schoolId);
                             classMapping[className] = newClass.id;
                         } catch (err) {
                             console.error(`Failed to create class: ${className}`, err);
@@ -339,19 +410,27 @@ export default function Admin() {
                     }
                 }
 
-                // Assign class IDs to students
-                for (const student of studentsToUpload) {
-                    if (student.class && classMapping[student.class]) {
-                        student.classId = classMapping[student.class];
-                    } else {
-                        // Default to selected class if no class specified or creation failed
-                        student.classId = selectedClass.id;
-                    }
-                }
+                // Create properly structured students with classId property
+                const studentsWithClassIds = studentsToUpload.map(student => ({
+                    name: student.name,
+                    grade: student.grade,
+                    class: student.class,
+                    classId: classMapping[student.class],
+                    schoolId: student.schoolId
+                }));
 
-                await api.uploadStudents(studentsToUpload);
+                await api.uploadStudents(studentsWithClassIds);
                 setUploadMessage(`✅ Success! Uploaded ${studentsToUpload.length} students`);
-                refreshData();
+
+                // Refresh data to show new classes
+                await refreshData();
+
+                // Auto-select a class if none is selected
+                if (!classId && classes.length > 0) {
+                    const firstClass = classes[0];
+                    setClassId(firstClass.id);
+                    setSelectedClass(firstClass);
+                }
             } else {
                 setUploadMessage("❌ No valid students found in CSV");
             }

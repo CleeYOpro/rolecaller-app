@@ -63,20 +63,6 @@ export const attendanceService = {
         schoolId = classRecords[0].schoolId;
       }
 
-      // Get teacher name for this school
-      let teacherName = null;
-      if (schoolId) {
-        const teacherRecords = await localDb
-          .select()
-          .from(teachersLocal)
-          .where(eq(teachersLocal.schoolId, schoolId))
-          .limit(1);
-        
-        if (teacherRecords.length > 0) {
-          teacherName = teacherRecords[0].name;
-        }
-      }
-
       const existing = await localDb.select()
         .from(attendanceLocal)
         .where(and(eq(attendanceLocal.studentId, studentId), eq(attendanceLocal.date, date)));
@@ -86,8 +72,7 @@ export const attendanceService = {
           .set({
             status,
             updatedAt: new Date().toISOString(),
-            synced: 'false',   // ← ALWAYS false until sync button is pressed
-            teacherName // Include teacher name in update
+            synced: 'false'   // ← ALWAYS false until sync button is pressed
           })
           .where(eq(attendanceLocal.id, existing[0].id));
       } else {
@@ -98,8 +83,7 @@ export const attendanceService = {
           status,
           date,
           updatedAt: new Date().toISOString(),
-          synced: 'false',   // ← ALWAYS false
-          teacherName // Include teacher name in insert
+          synced: 'false'   // ← ALWAYS false
         });
       }
 
@@ -152,13 +136,53 @@ export const attendanceService = {
     }
   },
   
-  // Check if teacher name exists for a school
-  hasTeacherName: async (schoolId: string): Promise<boolean> => {
+  // Save teacher name for a school
+  saveTeacherName: async (schoolId: string, teacherName: string) => {
     try {
-      const result = await localDb.select().from(teachersLocal).where(eq(teachersLocal.schoolId, schoolId)).limit(1);
-      return result.length > 0;
-    } catch {
-      return false;
+      // Check if teacher name already exists for this school
+      const existing = await localDb.select()
+        .from(teachersLocal)
+        .where(eq(teachersLocal.schoolId, schoolId))
+        .limit(1);
+        
+      if (existing.length > 0) {
+        // Update existing record
+        await localDb.update(teachersLocal)
+          .set({
+            name: teacherName,
+            createdAt: new Date().toISOString()
+          })
+          .where(eq(teachersLocal.schoolId, schoolId));
+      } else {
+        // Insert new record
+        await localDb.insert(teachersLocal).values({
+          id: generateUuid(),
+          schoolId,
+          name: teacherName,
+          createdAt: new Date().toISOString()
+        });
+      }
+    } catch (err) {
+      console.error('Failed to save teacher name:', err);
+      throw err;
+    }
+  },
+  
+  // Get teacher name for a school
+  getTeacherName: async (schoolId: string): Promise<string | null> => {
+    try {
+      const result = await localDb.select()
+        .from(teachersLocal)
+        .where(eq(teachersLocal.schoolId, schoolId))
+        .limit(1);
+        
+      if (result.length > 0) {
+        return result[0].name;
+      }
+      return null;
+    } catch (err) {
+      console.error('Failed to get teacher name:', err);
+      return null;
     }
   }
 };
