@@ -26,6 +26,7 @@ interface StudentSearchOverviewProps {
     classId: string;
     onStudentUpdate: (student: Student) => void;
     refreshData: () => Promise<void>;
+    headerComponent?: React.ReactNode;
 }
 
 export default function StudentSearchOverview({
@@ -33,6 +34,7 @@ export default function StudentSearchOverview({
     classes,
     onStudentUpdate,
     refreshData,
+    headerComponent,
 }: StudentSearchOverviewProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -320,6 +322,7 @@ export default function StudentSearchOverview({
                     </View>
 
                     <ScrollView style={{ flex: 1 }}>
+                        {headerComponent && <View style={{ marginBottom: 16 }}>{headerComponent}</View>}
                         <View style={{ paddingHorizontal: 16 }}>
                             {classes.map((cls) => {
                                 const classStudents = filteredStudents.filter(s => s.classId === cls.id);
@@ -398,49 +401,52 @@ export default function StudentSearchOverview({
                 </>
             ) : (
                 /* Desktop Layout */
-                <View style={styles.splitPane}>
-                    <View style={styles.leftPane}>
-                        <TextInput style={styles.searchInput} placeholder="Search by name or ID..." value={searchQuery} onChangeText={setSearchQuery} />
-                        <ScrollView>
-                            {/* Desktop list */}
-                            {classes.map((cls) => {
-                                const classStudents = filteredStudents.filter(s => s.classId === cls.id);
-                                if (classStudents.length === 0) return null;
-                                return (
-                                    <View key={cls.id} style={styles.classSection}>
-                                        <Text style={styles.classHeader}>{cls.name}</Text>
-                                        {classStudents.map((student) => (
-                                            <TouchableOpacity
-                                                key={student.id}
-                                                style={[
-                                                    styles.studentItem,
-                                                    selectedStudent?.id === student.id && styles.studentItemSelected,
-                                                ]}
-                                                onPress={() => handleSelectStudent(student)}
-                                            >
-                                                <Text style={styles.studentName}>{student.name}</Text>
-                                                <Text style={styles.studentId}>ID: {student.id}</Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </View>
-                                );
-                            })}
-                        </ScrollView>
-                    </View>
-
-                    <View style={styles.rightPane}>
-                        {selectedStudent ? (
+                <>
+                    {headerComponent && <View style={{ marginBottom: 16 }}>{headerComponent}</View>}
+                    <View style={styles.splitPane}>
+                        <View style={styles.leftPane}>
+                            <TextInput style={styles.searchInput} placeholder="Search by name or ID..." value={searchQuery} onChangeText={setSearchQuery} />
                             <ScrollView>
-                                <DetailsContent />
+                                {/* Desktop list */}
+                                {classes.map((cls) => {
+                                    const classStudents = filteredStudents.filter(s => s.classId === cls.id);
+                                    if (classStudents.length === 0) return null;
+                                    return (
+                                        <View key={cls.id} style={styles.classSection}>
+                                            <Text style={styles.classHeader}>{cls.name}</Text>
+                                            {classStudents.map((student) => (
+                                                <TouchableOpacity
+                                                    key={student.id}
+                                                    style={[
+                                                        styles.studentItem,
+                                                        selectedStudent?.id === student.id && styles.studentItemSelected,
+                                                    ]}
+                                                    onPress={() => handleSelectStudent(student)}
+                                                >
+                                                    <Text style={styles.studentName}>{student.name}</Text>
+                                                    <Text style={styles.studentId}>ID: {student.id}</Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    );
+                                })}
                             </ScrollView>
-                        ) : (
-                            <View style={styles.emptyDetails}>
-                                <Ionicons name="person-outline" size={80} color="#555" />
-                                <Text style={styles.emptyDetailsText}>Select a student to view details</Text>
-                            </View>
-                        )}
+                        </View>
+
+                        <View style={styles.rightPane}>
+                            {selectedStudent ? (
+                                <ScrollView>
+                                    <DetailsContent />
+                                </ScrollView>
+                            ) : (
+                                <View style={styles.emptyDetails}>
+                                    <Ionicons name="person-outline" size={80} color="#555" />
+                                    <Text style={styles.emptyDetailsText}>Select a student to view details</Text>
+                                </View>
+                            )}
+                        </View>
                     </View>
-                </View>
+                </>
             )}
 
             {/* Edit Modal */}

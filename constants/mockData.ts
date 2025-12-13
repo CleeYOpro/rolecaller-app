@@ -11,9 +11,9 @@ export const MOCK_CLASSES: Class[] = [
 ];
 
 export const MOCK_STUDENTS: Student[] = [
-    { id: '10001', name: 'Alice Johnson', standard: '5', classId: 'class-1', schoolId: 'school-1' },
-    { id: '10002', name: 'Bob Smith', standard: '5', classId: 'class-1', schoolId: 'school-1' },
-    { id: '10003', name: 'Charlie Brown', standard: '10', classId: 'class-2', schoolId: 'school-1' },
+    { id: '10001', name: 'Alice Johnson', grade: '5', classId: 'class-1', schoolId: 'school-1' },
+    { id: '10002', name: 'Bob Smith', grade: '5', classId: 'class-1', schoolId: 'school-1' },
+    { id: '10003', name: 'Charlie Brown', grade: '10', classId: 'class-2', schoolId: 'school-1' },
 ];
 
 export const MOCK_ASSIGNMENTS: ClassAssignments = {

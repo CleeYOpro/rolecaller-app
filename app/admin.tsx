@@ -1,10 +1,11 @@
-import { AttendanceMap, AttendanceStatus, Class, Student } from '@/constants/types';
+import { AttendanceMap, Class, Student } from '@/constants/types';
 import { api } from '@/services/api';
 import { Picker } from '@react-native-picker/picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import AttendanceChart from './components/AttendanceChart';
 import StudentSearchOverview from './components/StudentSearchOverview';
 
 // Helper function to properly parse CSV lines with quoted values
@@ -153,23 +154,27 @@ export default function Admin() {
         refreshData();
     }, []); // Run once on mount, refreshData handles the rest
 
-    // Daily attendance summary
-    const dailyAttendanceSummary = React.useMemo(() => {
-        const summary: Record<AttendanceStatus, number> = {
-            present: 0,
-            absent: 0,
-            late: 0,
-        };
-        classes.forEach((cls) => {
-            const map = attendance[cls.id]?.[today] ?? {};
-            Object.values(map).forEach((status) => {
-                if (status === "present" || status === "absent" || status === "late") {
-                    summary[status] += 1;
-                }
-            });
+    // Overall attendance stats for the chart
+    const attendanceStats = React.useMemo(() => {
+        let present = 0;
+        let absent = 0;
+        let late = 0;
+        let unmarked = 0;
+
+        students.forEach((student) => {
+            if (student.classId) {
+                const status = attendance[student.classId]?.[today]?.[student.id];
+                if (status === 'present') present++;
+                else if (status === 'absent') absent++;
+                else if (status === 'late') late++;
+                else unmarked++;
+            } else {
+                unmarked++;
+            }
         });
-        return summary;
-    }, [attendance, classes, today]);
+
+        return { present, absent, late, unmarked };
+    }, [students, attendance, today]);
 
     const handleSignOut = () => {
         router.replace('/');
@@ -268,7 +273,6 @@ export default function Admin() {
             });
 
             setStudentName("");
-
             setStudentGrade("");
             setStudentClass("");
             Alert.alert("Success", "Student added successfully");
@@ -313,6 +317,7 @@ export default function Admin() {
             ]
         );
     };
+
     const handleUploadCSV = async () => {
         try {
             const result = await DocumentPicker.getDocumentAsync({
@@ -514,15 +519,25 @@ export default function Admin() {
 
                 <View style={styles.content}>
                     {activeTab === 'view' ? (
-                        <StudentSearchOverview
-                            students={students}
-                            classes={classes}
-                            classId={classId || ''}
-                            onStudentUpdate={(updated) => {
-                                setStudents(prev => prev.map(s => s.id === updated.id ? updated : s));
-                            }}
-                            refreshData={refreshData}
-                        />
+                        <View style={{ flex: 1 }}>
+                            <StudentSearchOverview
+                                students={students}
+                                classes={classes}
+                                classId={classId || ''}
+                                onStudentUpdate={(updated) => {
+                                    setStudents(prev => prev.map(s => s.id === updated.id ? updated : s));
+                                }}
+                                refreshData={refreshData}
+                                headerComponent={
+                                    <AttendanceChart
+                                        present={attendanceStats.present}
+                                        absent={attendanceStats.absent}
+                                        late={attendanceStats.late}
+                                        unmarked={attendanceStats.unmarked}
+                                    />
+                                }
+                            />
+                        </View>
                     ) : (
                         <ScrollView>
                             <View style={styles.subTabContainer}>
