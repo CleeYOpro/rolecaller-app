@@ -1,5 +1,4 @@
-import { pgTable, foreignKey, uuid, text, timestamp, unique, date, pgEnum } from "drizzle-orm/pg-core"
-import { sql } from "drizzle-orm"
+import { date, foreignKey, pgEnum, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 export const attendanceStatus = pgEnum("attendance_status", ['present', 'absent', 'late'])
 
@@ -13,15 +12,15 @@ export const students = pgTable("students", {
 	classId: text("class_id").notNull(),
 }, (table) => [
 	foreignKey({
-			columns: [table.schoolId],
-			foreignColumns: [schools.id],
-			name: "students_school_id_schools_id_fk"
-		}),
+		columns: [table.schoolId],
+		foreignColumns: [schools.id],
+		name: "students_school_id_schools_id_fk"
+	}),
 	foreignKey({
-			columns: [table.classId],
-			foreignColumns: [classes.id],
-			name: "students_class_id_classes_id_fk"
-		}),
+		columns: [table.classId],
+		foreignColumns: [classes.id],
+		name: "students_class_id_classes_id_fk"
+	}),
 ]);
 
 export const schools = pgTable("schools", {
@@ -40,10 +39,10 @@ export const classes = pgTable("classes", {
 	id: text().primaryKey().notNull(),
 }, (table) => [
 	foreignKey({
-			columns: [table.schoolId],
-			foreignColumns: [schools.id],
-			name: "classes_school_id_schools_id_fk"
-		}),
+		columns: [table.schoolId],
+		foreignColumns: [schools.id],
+		name: "classes_school_id_schools_id_fk"
+	}),
 ]);
 
 export const attendance = pgTable("attendance", {
@@ -55,14 +54,14 @@ export const attendance = pgTable("attendance", {
 	classId: text("class_id").notNull(),
 }, (table) => [
 	foreignKey({
-			columns: [table.studentId],
-			foreignColumns: [students.id],
-			name: "attendance_student_id_students_id_fk"
-		}),
+		columns: [table.studentId],
+		foreignColumns: [students.id],
+		name: "attendance_student_id_students_id_fk"
+	}),
 	foreignKey({
-			columns: [table.classId],
-			foreignColumns: [classes.id],
-			name: "attendance_class_id_classes_id_fk"
-		}),
+		columns: [table.classId],
+		foreignColumns: [classes.id],
+		name: "attendance_class_id_classes_id_fk"
+	}),
 	unique("attendance_student_id_date_unique").on(table.studentId, table.date),
 ]);

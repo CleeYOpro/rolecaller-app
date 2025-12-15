@@ -67,51 +67,51 @@ export const localDb = drizzle(expoDb);
 
 // Schema for Drizzle queries (must match above)
 export const schoolsLocal = sqliteTable('schools_local', {
-    id: text('id').primaryKey(),
-    name: text('name').notNull(),
-    email: text('email').notNull(),
-    password: text('password').notNull(),
-    address: text('address'),
-    createdAt: text('created_at').notNull(),
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  password: text('password').notNull(),
+  address: text('address'),
+  createdAt: text('created_at').notNull(),
 });
 
 export const classesLocal = sqliteTable('classes_local', {
-    id: text('id').primaryKey(),
-    schoolId: text('school_id').notNull(),
-    name: text('name').notNull(),
-    createdAt: text('created_at').notNull(),
+  id: text('id').primaryKey(),
+  schoolId: text('school_id').notNull(),
+  name: text('name').notNull(),
+  createdAt: text('created_at').notNull(),
 });
 
 export const studentsLocal = sqliteTable('students_local', {
-    id: text('id').primaryKey(),
-    classId: text('class_id').notNull(),
-    schoolId: text('school_id').notNull(),
-    name: text('name').notNull(),
-    grade: text('grade').notNull(),
-    createdAt: text('created_at').notNull(),
+  id: text('id').primaryKey(),
+  classId: text('class_id').notNull(),
+  schoolId: text('school_id').notNull(),
+  name: text('name').notNull(),
+  grade: text('grade').notNull(),
+  createdAt: text('created_at').notNull(),
 }, (t) => [
-    index('idx_students_school').on(t.schoolId),
-    index('idx_students_class').on(t.classId),
+  index('idx_students_school').on(t.schoolId),
+  index('idx_students_class').on(t.classId),
 ]);
 
 export const attendanceLocal = sqliteTable('attendance_local', {
-    id: text('id').primaryKey(),
-    studentId: text('student_id').notNull(),
-    classId: text('class_id').notNull(),
-    status: text('status').notNull(),
-    date: text('date').notNull(),
-    updatedAt: text('updated_at').notNull(),
-    synced: text('synced').notNull().default('false'),
+  id: text('id').primaryKey(),
+  studentId: text('student_id').notNull(),
+  classId: text('class_id').notNull(),
+  status: text('status').notNull(),
+  date: text('date').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  synced: text('synced').notNull().default('false'),
 }, (t) => [
-    index('idx_attendance_unique').on(t.studentId, t.date),
+  index('idx_attendance_unique').on(t.studentId, t.date),
 ]);
 
 // New table for teacher information
 export const teachersLocal = sqliteTable('teachers_local', {
-    id: text('id').primaryKey(),
-    schoolId: text('school_id').notNull(),
-    name: text('name').notNull(),
-    createdAt: text('created_at').notNull(),
+  id: text('id').primaryKey(),
+  schoolId: text('school_id').notNull(),
+  name: text('name').notNull(),
+  createdAt: text('created_at').notNull(),
 });
 
 export const generateUuid = () => uuidv4();

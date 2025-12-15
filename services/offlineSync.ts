@@ -1,14 +1,21 @@
 import { db } from '@/database/client';
 import { attendanceLocal, classesLocal, localDb, schoolsLocal, studentsLocal, teachersLocal } from '@/database/localdb';
 import { classes, schools, students } from '@/database/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { api } from './api';
 
 export const syncPullSchoolData = async (schoolId: string) => {
     console.log('Starting sync pull for school:', schoolId);
 
     try {
-        // 1. Fetch from Neon
+        // 1. Clear existing local data for all tables to ensure proper school isolation
+        await localDb.delete(attendanceLocal).where(sql`1=1`);
+        await localDb.delete(classesLocal).where(sql`1=1`);
+        await localDb.delete(studentsLocal).where(sql`1=1`);
+        await localDb.delete(schoolsLocal).where(sql`1=1`);
+        await localDb.delete(teachersLocal).where(sql`1=1`);
+
+        // 2. Fetch from Neon
         const schoolRes = await db.select().from(schools).where(eq(schools.id, schoolId));
         const classesRes = await db.select().from(classes).where(eq(classes.schoolId, schoolId));
         const studentsRes = await db.select().from(students).where(eq(students.schoolId, schoolId));
@@ -20,7 +27,7 @@ export const syncPullSchoolData = async (schoolId: string) => {
 
         const school = schoolRes[0];
 
-        // 2. Save to SQLite
+        // 3. Save to SQLite
         // Save School
         await localDb.insert(schoolsLocal).values({
             id: school.id,

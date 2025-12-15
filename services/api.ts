@@ -4,6 +4,8 @@ import { attendance, classes, schools, students } from '@/database/schema';
 import { isOnline } from '@/utils/connectivity';
 import { and, eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
+import { authStore } from '../hooks/useAuth';
+
 
 // Serverless: Direct database access via Neon HTTP
 export const api = {
@@ -58,9 +60,12 @@ export const api = {
                 throw new Error('Invalid password');
             }
 
+
+
             // Don't return password
             const { password: _, ...schoolWithoutPassword } = school;
             console.log('Login successful for school:', school.name);
+            authStore.setSchool(schoolWithoutPassword);
             return schoolWithoutPassword as School;
         } catch (err) {
             console.error('Login error:', err);
@@ -225,6 +230,12 @@ export const api = {
                     grade: student.grade || '',
                 })
                 .where(eq(students.id, student.id));
+
+            // Also move their existing attendance records to the new class
+            // This ensures history is preserved and visible in the new class view
+            await db.update(attendance)
+                .set({ classId: student.classId })
+                .where(eq(attendance.studentId, student.id));
         } catch (err) {
             console.error('Failed to update student:', err);
             throw new Error('Update failed: ' + (err as Error).message);

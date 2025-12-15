@@ -6,6 +6,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     slug: "rolecaller-app",
     version: "1.0.0",
     orientation: "portrait",
+    icon: "./assets/logo.png",
     scheme: "rolecallerapp",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
@@ -23,7 +24,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
     android: {
         adaptiveIcon: {
-            foregroundImage: "./assets/adaptive-icon.png",
+            foregroundImage: "./assets/logo.png",
             backgroundColor: "#E6F4FE"
         },
         splash: {
@@ -36,6 +37,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         package: "com.cleo.schoolattendance"
     },
     web: {
+        favicon: "./assets/logo.png",
         output: "static"
     },
     plugins: [
@@ -49,6 +51,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
                 "backgroundColor": "#ffffff",
                 "dark": {
                     "backgroundColor": "#000000"
+                }
+            }
+        ],
+        [
+            "expo-build-properties",
+            {
+                "android": {
+                    "enableMinifyInReleaseBuilds": true,
+                    "enableShrinkResourcesInReleaseBuilds": true
                 }
             }
         ],

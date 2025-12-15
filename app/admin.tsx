@@ -1,13 +1,16 @@
 import { AttendanceMap, Class, Student } from '@/constants/types';
+import { authStore } from '@/hooks/useAuth';
 import { api } from '@/services/api';
+import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import 'react-native-get-random-values';
+import { v4 as uuidv4 } from 'uuid';
 import AttendanceChart from './components/AttendanceChart';
 import StudentSearchOverview from './components/StudentSearchOverview';
-
 // Helper function to properly parse CSV lines with quoted values
 const parseCSVLine = (line: string): string[] => {
     const result: string[] = [];
@@ -76,79 +79,68 @@ export default function Admin() {
     // Fetch data
     const refreshData = async () => {
         try {
+            const school = authStore.getSchool();
+
+            if (!school) {
+                console.warn('No logged-in school');
+                return;
+            }
+
             let currentClassId = classId;
             let currentClass: Class | null = selectedClass;
 
-            const schools = await api.getSchools();
-            console.log("Fetched schools:", schools);
-            if (schools.length > 0) {
-                const schoolId = schools[0].id;
-                setSchoolName(schools[0].name);
-                const cls = await api.getClasses(schoolId);
-                setClasses(cls);
+            setSchoolName(school.name);
 
-                // Update the current class if it still exists, otherwise select the first available class
-                if (currentClassId) {
-                    const updatedCurrentClass = cls.find(c => c.id === currentClassId);
-                    if (updatedCurrentClass) {
-                        setSelectedClass(updatedCurrentClass);
-                    } else if (cls.length > 0) {
-                        // Class was deleted, select first available class
-                        currentClass = cls[0];
-                        currentClassId = cls[0].id;
-                        setClassId(currentClassId);
-                        setSelectedClass(currentClass);
-                    } else {
-                        // No classes left
-                        setClassId(null);
-                        setSelectedClass(null);
-                    }
+            const cls = await api.getClasses(school.id);
+            setClasses(cls);
+
+            // Maintain selected class
+            if (currentClassId) {
+                const updated = cls.find(c => c.id === currentClassId);
+                if (updated) {
+                    setSelectedClass(updated);
+                    currentClass = updated;
                 } else if (cls.length > 0) {
-                    // Select the first class if none currently selected
                     currentClass = cls[0];
                     currentClassId = cls[0].id;
                     setClassId(currentClassId);
                     setSelectedClass(currentClass);
                 } else {
-                    // No classes found
-                    console.warn("No classes found");
                     setClassId(null);
                     setSelectedClass(null);
+                    return;
                 }
-
-                // Only fetch students and attendance if we have a valid class
-                if (currentClassId && currentClass) {
-                    // Use classId's schoolId for student queries
-                    // FETCH ALL STUDENTS for the school, not just for one class
-                    const studs = await api.getStudents(currentClass.schoolId);
-                    setStudents(studs);
-
-                    // Get attendance for all classes (including any new ones)
-                    const attMap: AttendanceMap = {};
-                    for (const c of cls) { // Use the freshly fetched classes list
-                        const att = await api.getAllAttendance(c.id);
-                        attMap[c.id] = att;
-                    }
-                    setAttendance(attMap);
-                }
+            } else if (cls.length > 0) {
+                currentClass = cls[0];
+                currentClassId = cls[0].id;
+                setClassId(currentClassId);
+                setSelectedClass(currentClass);
             } else {
-                console.warn("No schools found");
-                Alert.alert(
-                    "No Schools Found",
-                    "No schools are available. Please make sure the API server is running and the database has been seeded.",
-                    [{ text: "OK" }]
-                );
+                setClassId(null);
+                setSelectedClass(null);
                 return;
             }
+
+            // Fetch students ONCE per school
+            const studs = await api.getStudents(school.id);
+            setStudents(studs);
+
+            // Attendance per class
+            const attMap: AttendanceMap = {};
+            for (const c of cls) {
+                attMap[c.id] = await api.getAllAttendance(c.id);
+            }
+            setAttendance(attMap);
+
         } catch (err) {
-            console.error("Failed to fetch admin data", err);
+            console.error('Failed to fetch admin data', err);
             Alert.alert(
-                "Connection Error",
-                `Failed to connect to the server. Please make sure the API server is running.\n\nError: ${err instanceof Error ? err.message : String(err)}`,
-                [{ text: "OK" }]
+                'Connection Error',
+                err instanceof Error ? err.message : String(err)
             );
         }
     };
+
 
     React.useEffect(() => {
         refreshData();
@@ -185,14 +177,13 @@ export default function Admin() {
         if (!name) return;
 
         try {
-            const schools = await api.getSchools();
-            if (schools.length === 0) {
-                Alert.alert("Error", "No school found");
+            const school = authStore.getSchool();
+            if (!school) {
+                Alert.alert("Error", "No school logged in");
                 return;
             }
-            // Get schoolId from selected class, or use first school
-            const schoolId = selectedClass?.schoolId || schools[0].id;
-            await api.addClass(name, schoolId);
+
+            await api.addClass(name, school.id);
             setNewClassName("");
             Alert.alert("Success", "Class added successfully");
             refreshData();
@@ -260,16 +251,22 @@ export default function Admin() {
         }
 
         // Generate a random ID for the student
-        const id = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        const id = uuidv4();
 
         try {
-            if (!classId || !selectedClass) return;
+            const school = authStore.getSchool();
+            if (!school) {
+                Alert.alert("Error", "No school logged in");
+                return;
+            }
+
+            if (!classId) return;
             await api.addStudent({
                 id,
                 name,
                 grade,
                 classId,
-                schoolId: selectedClass.schoolId,
+                schoolId: school.id,
             });
 
             setStudentName("");
@@ -353,19 +350,14 @@ export default function Admin() {
                 return;
             }
 
-            // Get school info - either from selected class or fetch schools
-            let schoolId;
-            if (selectedClass) {
-                schoolId = selectedClass.schoolId;
-            } else {
-                const schools = await api.getSchools();
-                if (schools.length === 0) {
-                    setUploadMessage("❌ No schools found");
-                    setUploading(false);
-                    return;
-                }
-                schoolId = schools[0].id;
+            // Get school info
+            const school = authStore.getSchool();
+            if (!school) {
+                setUploadMessage("❌ No school logged in");
+                setUploading(false);
+                return;
             }
+            const schoolId = school.id;
 
             const studentsToUpload = [];
             const classNames = new Set<string>();
@@ -468,13 +460,16 @@ export default function Admin() {
 
     const saveEdit = async (studentId: string) => {
         try {
-            if (!classId || !selectedClass) return;
+            const school = authStore.getSchool();
+            if (!school) return;
+
+            if (!classId) return;
             await api.updateStudent({
                 id: studentId,
                 name: editForm.name,
                 grade: editForm.grade,
                 classId: editForm.classId || undefined,
-                schoolId: selectedClass.schoolId,
+                schoolId: school.id,
             });
 
             refreshData();
@@ -580,10 +575,10 @@ export default function Admin() {
                                                         <Text style={styles.listItemTitle}>{cls.name}</Text>
                                                     </View>
                                                     <TouchableOpacity
-                                                        style={styles.deleteButton}
+                                                        style={styles.iconButton}
                                                         onPress={() => deleteClass(cls.id)}
                                                     >
-                                                        <Text style={styles.buttonText}>Delete</Text>
+                                                        <Ionicons name="trash-outline" size={20} color="#F44336" />
                                                     </TouchableOpacity>
                                                 </View>
                                             ))}
@@ -670,6 +665,18 @@ export default function Admin() {
                                                             value={editForm.name}
                                                             onChangeText={(text) => setEditForm({ ...editForm, name: text })}
                                                         />
+                                                        <View style={[styles.tableInput, { flex: 1, justifyContent: 'center', padding: 0 }]}>
+                                                            <Picker
+                                                                selectedValue={editForm.classId}
+                                                                style={{ color: '#EAEAEA', backgroundColor: 'transparent', height: 40 }}
+                                                                onValueChange={(itemValue) => setEditForm({ ...editForm, classId: itemValue })}
+                                                                dropdownIconColor="#888"
+                                                            >
+                                                                {classes.map((cls) => (
+                                                                    <Picker.Item key={cls.id} label={cls.name} value={cls.id} color={Platform.OS === 'ios' ? undefined : '#888'} />
+                                                                ))}
+                                                            </Picker>
+                                                        </View>
                                                         <TextInput
                                                             style={[styles.tableInput, { flex: 1 }]}
                                                             value={editForm.grade}
@@ -677,16 +684,16 @@ export default function Admin() {
                                                         />
                                                         <View style={[styles.actionButtons, { flex: 1, justifyContent: 'center' }]}>
                                                             <TouchableOpacity
-                                                                style={styles.saveButton}
+                                                                style={styles.iconButton}
                                                                 onPress={() => saveEdit(student.id)}
                                                             >
-                                                                <Text style={styles.buttonText}>Save</Text>
+                                                                <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
                                                             </TouchableOpacity>
                                                             <TouchableOpacity
-                                                                style={styles.cancelButton}
+                                                                style={styles.iconButton}
                                                                 onPress={cancelEdit}
                                                             >
-                                                                <Text style={styles.buttonText}>Cancel</Text>
+                                                                <Ionicons name="close-circle" size={24} color="#757575" />
                                                             </TouchableOpacity>
                                                         </View>
                                                     </View>
@@ -699,16 +706,16 @@ export default function Admin() {
                                                         <Text style={[styles.tableCell, { flex: 1 }]}>{student.grade || '-'}</Text>
                                                         <View style={[styles.actionButtons, { flex: 1, justifyContent: 'center' }]}>
                                                             <TouchableOpacity
-                                                                style={styles.editButton}
+                                                                style={styles.iconButton}
                                                                 onPress={() => startEdit(student)}
                                                             >
-                                                                <Text style={styles.buttonText}>Edit</Text>
+                                                                <Ionicons name="pencil" size={20} color="#3A86FF" />
                                                             </TouchableOpacity>
                                                             <TouchableOpacity
-                                                                style={styles.deleteButton}
+                                                                style={styles.iconButton}
                                                                 onPress={() => deleteStudent(student.id)}
                                                             >
-                                                                <Text style={styles.buttonText}>Delete</Text>
+                                                                <Ionicons name="trash-outline" size={20} color="#F44336" />
                                                             </TouchableOpacity>
                                                         </View>
                                                     </View>
@@ -1038,5 +1045,10 @@ const styles = StyleSheet.create({
         padding: 4,
         color: '#EAEAEA',
         marginRight: 8,
+    },
+    iconButton: {
+        padding: 4,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 });
