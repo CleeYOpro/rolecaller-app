@@ -4,7 +4,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ...config,
     name: "rolecaller-app",
     slug: "rolecaller-app",
-    version: "1.0.0",
+    version: "1.3.3",
     orientation: "portrait",
     icon: "./assets/logo.png",
     scheme: "rolecallerapp",
@@ -35,6 +35,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         edgeToEdgeEnabled: true,
         predictiveBackGestureEnabled: false,
         package: "com.cleo.schoolattendance"
+
     },
     web: {
         favicon: "./assets/logo.png",
