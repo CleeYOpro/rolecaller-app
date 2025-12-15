@@ -13,6 +13,7 @@ export type School = {
     name: string;
     email: string;
     password?: string;
+    address?: string;
 };
 
 export type Class = {

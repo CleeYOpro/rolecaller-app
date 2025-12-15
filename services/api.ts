@@ -1,5 +1,6 @@
 import { AttendanceStatus, Class, School, Student } from '@/constants/types';
 import { db } from '@/database/client';
+import { attendanceLocal, classesLocal, localDb, schoolsLocal, studentsLocal } from '@/database/localdb';
 import { attendance, classes, schools, students } from '@/database/schema';
 import { isOnline } from '@/utils/connectivity';
 import { and, eq } from 'drizzle-orm';
@@ -20,13 +21,15 @@ export const api = {
                 name: schools.name,
                 email: schools.email,
                 address: schools.address,
+                password: schools.password, // Added for offline sync
             }).from(schools);
             console.log('Successfully fetched schools:', result);
             return result.map(school => ({
                 id: school.id,
                 name: school.name,
                 email: school.email,
-                address: school.address
+                address: school.address || undefined,
+                password: school.password,
             }));
         } catch (err) {
             console.error('Failed to fetch schools:', err);
@@ -36,7 +39,32 @@ export const api = {
 
     login: async (email: string, password: string): Promise<School> => {
         const online = await isOnline();
-        if (!online) throw new Error('No internet connection');
+
+        if (!online) {
+            console.log('Offline: Attempting local login...');
+            try {
+                const result = await localDb.select().from(schoolsLocal).where(eq(schoolsLocal.email, email)).limit(1);
+
+                if (result.length === 0) {
+                    throw new Error('School not found locally. Please login online first or sync schools.');
+                }
+
+                const school = result[0];
+                if (school.password !== password) {
+                    throw new Error('Invalid password');
+                }
+
+                console.log('Offline login successful for school:', school.name);
+                const { password: _, ...schoolWithoutPassword } = school;
+                const finalSchool = { ...schoolWithoutPassword, address: school.address || undefined };
+                authStore.setSchool(finalSchool as School);
+                return finalSchool as School;
+            } catch (err) {
+                console.error('Offline login error:', err);
+                throw err instanceof Error ? err : new Error('Offline login failed');
+            }
+        }
+
         try {
             console.log(`Attempting login with email: ${email}`);
             const result = await db.select({
@@ -65,8 +93,9 @@ export const api = {
             // Don't return password
             const { password: _, ...schoolWithoutPassword } = school;
             console.log('Login successful for school:', school.name);
-            authStore.setSchool(schoolWithoutPassword);
-            return schoolWithoutPassword as School;
+            const finalSchool = { ...schoolWithoutPassword, address: school.address || undefined };
+            authStore.setSchool(finalSchool);
+            return finalSchool as School;
         } catch (err) {
             console.error('Login error:', err);
             throw err instanceof Error ? err : new Error('Login failed: ' + (err as Error).message);
@@ -76,7 +105,21 @@ export const api = {
     // Classes
     getClasses: async (schoolId: string): Promise<Class[]> => {
         const online = await isOnline();
-        if (!online) throw new Error('No internet connection');
+        if (!online) {
+            console.log('Offline: Fetching classes locally...');
+            try {
+                const result = await localDb.select().from(classesLocal).where(eq(classesLocal.schoolId, schoolId));
+                console.log(`Offline: Fetched ${result.length} classes`);
+                return result.map(c => ({
+                    id: c.id,
+                    name: c.name,
+                    schoolId: c.schoolId,
+                }));
+            } catch (err) {
+                console.error('Offline fetch error:', err);
+                return [];
+            }
+        }
         try {
             console.log(`Fetching classes for schoolId: ${schoolId}`);
             const result = await db.select({
@@ -127,9 +170,30 @@ export const api = {
     // Students
     getStudents: async (schoolId: string, classId?: string): Promise<Student[]> => {
         const online = await isOnline();
-        if (!online) throw new Error('No internet connection');
+        if (!online) {
+            console.log('Offline: Fetching students locally...');
+            try {
+                const whereCondition = classId
+                    ? and(eq(studentsLocal.schoolId, schoolId), eq(studentsLocal.classId, classId))
+                    : eq(studentsLocal.schoolId, schoolId);
+
+                const result = await localDb.select().from(studentsLocal).where(whereCondition);
+                console.log(`Offline: Fetched ${result.length} students`);
+                return result.map(s => ({
+                    id: s.id,
+                    name: s.name,
+                    grade: s.grade,
+                    classId: s.classId,
+                    schoolId: s.schoolId,
+                }));
+            } catch (err) {
+                console.error('Offline fetch error:', err);
+                return [];
+            }
+        }
         try {
             console.log(`Fetching students for schoolId: ${schoolId}${classId ? `, classId: ${classId}` : ''}`);
+            // ... (rest of online logic)
             console.log(`Fetching students for schoolId: ${schoolId}${classId ? `, classId: ${classId}` : ''}`);
 
             const whereCondition = classId
@@ -256,13 +320,31 @@ export const api = {
     // Attendance
     getAttendance: async (classId: string, date: string): Promise<Record<string, AttendanceStatus>> => {
         const online = await isOnline();
-        if (!online) throw new Error('No internet connection');
+
+        if (!online) {
+            console.log('Offline: Fetching attendance locally...');
+            try {
+                const result = await localDb.select().from(attendanceLocal)
+                    .where(and(eq(attendanceLocal.classId, classId), eq(attendanceLocal.date, date)));
+
+                const map: Record<string, AttendanceStatus> = {};
+                result.forEach(r => {
+                    map[r.studentId] = r.status as AttendanceStatus;
+                });
+                return map;
+            } catch (err) {
+                console.error('Offline fetch error:', err);
+                return {};
+            }
+        }
+
         try {
             const result = await db.select({
                 studentId: attendance.studentId,
                 status: attendance.status,
             }).from(attendance)
                 .where(and(eq(attendance.classId, classId), eq(attendance.date, date)));
+            // ...
 
             const map: Record<string, AttendanceStatus> = {};
             result.forEach(r => {

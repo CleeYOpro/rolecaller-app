@@ -1,18 +1,51 @@
+import { School } from '@/constants/types';
 import { db } from '@/database/client';
 import { attendanceLocal, classesLocal, localDb, schoolsLocal, studentsLocal, teachersLocal } from '@/database/localdb';
 import { classes, schools, students } from '@/database/schema';
 import { eq, sql } from 'drizzle-orm';
 import { api } from './api';
 
+// New function to sync ALL schools (credentials) to local DB
+export const syncSchoolsToLocal = async (schoolsData: School[]) => {
+    console.log(`Syncing ${schoolsData.length} schools to local DB...`);
+    try {
+        for (const s of schoolsData) {
+            await localDb.insert(schoolsLocal).values({
+                id: s.id,
+                name: s.name,
+                email: s.email,
+                password: s.password || '', // Password might be missing if typing is strict, but API provides it now
+                address: s.address,
+                createdAt: new Date().toISOString(), // We don't have this from API getSchools but it's fine
+            }).onConflictDoUpdate({
+                target: schoolsLocal.id,
+                set: {
+                    name: s.name,
+                    email: s.email,
+                    password: s.password || '',
+                    address: s.address,
+                }
+            });
+        }
+        console.log('Schools synced successfully');
+    } catch (err) {
+        console.error('Failed to sync schools locally:', err);
+    }
+};
+
 export const syncPullSchoolData = async (schoolId: string) => {
     console.log('Starting sync pull for school:', schoolId);
 
     try {
         // 1. Clear existing local data for all tables to ensure proper school isolation
+        // NOTE: We do NOT clear schoolsLocal here anymore, because we want to keep
+        // credentials for other schools available for offline login.
+        // Schools are managed by syncSchoolsToLocal or updated individually.
+
         await localDb.delete(attendanceLocal).where(sql`1=1`);
         await localDb.delete(classesLocal).where(sql`1=1`);
         await localDb.delete(studentsLocal).where(sql`1=1`);
-        await localDb.delete(schoolsLocal).where(sql`1=1`);
+        // await localDb.delete(schoolsLocal).where(sql`1=1`); <--- REMOVED
         await localDb.delete(teachersLocal).where(sql`1=1`);
 
         // 2. Fetch from Neon

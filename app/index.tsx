@@ -9,6 +9,8 @@ import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal, Platfo
 // app/index.tsx - CORRECT imports
 import { localDb, teachersLocal } from '@/database/localdb';
 import { attendanceService } from '@/services/attendanceService';
+import { syncSchoolsToLocal } from '@/services/offlineSync';
+import { isOnline } from '@/utils/connectivity';
 import { eq } from 'drizzle-orm';
 import TeacherNameInput from './components/TeacherNameInput';
 
@@ -29,6 +31,8 @@ export default function LoginPage() {
     const [availableClasses, setAvailableClasses] = useState<Class[]>([]);
     const [selectedClass, setSelectedClass] = useState<Class | null>(null);
 
+
+
     // Fetch schools on mount
     const fetchSchools = () => {
         setError("");
@@ -36,6 +40,9 @@ export default function LoginPage() {
             .then((schools) => {
                 console.log("Fetched schools:", schools);
                 setSchools(schools);
+                // Sync to local DB for offline login
+                syncSchoolsToLocal(schools);
+
                 if (schools.length === 0) {
                     setError("No schools found. Please make sure the API server is running.");
                 }
@@ -161,32 +168,22 @@ export default function LoginPage() {
                     params: { schoolId: selectedSchool.id, schoolName: selectedSchool.name }
                 });
             } else if (role === "teacher") {
-                // Ask to download data only on first login
-                const hasData = await attendanceService.hasOfflineData();
-                if (!hasData) {
-                    Alert.alert(
-                        "Download for Offline Use",
-                        "Download your school data now to work without internet?",
-                        [
-                            { text: "Later", style: "cancel" },
-                            {
-                                text: "Download", onPress: async () => {
-                                    try {
-                                        await attendanceService.downloadSchoolData(selectedSchool.id);
-                                        Alert.alert("Success", "You can now work offline!");
-                                        // After downloading data, check if teacher name is needed
-                                        await checkTeacherName(selectedSchool.id);
-                                    } catch (err: any) {
-                                        Alert.alert("Failed", err.message || "Check internet");
-                                    }
-                                }
-                            }
-                        ]
-                    );
-                } else {
-                    // Already has data, check if teacher name is needed
-                    await checkTeacherName(selectedSchool.id);
+                // Determine connectivity
+                const online = await isOnline();
+
+                if (online) {
+                    try {
+                        // Silent sync: Update local database with latest school data (classes, students, etc.)
+                        await attendanceService.downloadSchoolData(selectedSchool.id);
+                        console.log("Silent sync completed successfully.");
+                    } catch (err) {
+                        console.error("Silent sync failed:", err);
+                        // Non-blocking error, continue to login
+                    }
                 }
+
+                // Check for teacher name (works offline if previously synced)
+                await checkTeacherName(selectedSchool.id);
             }
         } catch (err: any) {
             console.error("Login error:", err);
