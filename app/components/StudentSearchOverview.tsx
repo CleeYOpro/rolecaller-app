@@ -1,7 +1,6 @@
 import type { Class, Student } from '@/constants/types';
 import { api } from '@/services/api';
 import { Ionicons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert,
@@ -19,6 +18,10 @@ import {
 
 const { width, height } = Dimensions.get('window');
 const isMobile = width < 768;
+const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+];
 
 interface StudentSearchOverviewProps {
     students: Student[];
@@ -39,9 +42,6 @@ export default function StudentSearchOverview({
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
     const [attendanceData, setAttendanceData] = useState<Record<string, string>>({});
-    const [isEditModalVisible, setIsEditModalVisible] = useState(false);
-    const [editForm, setEditForm] = useState({ name: '', grade: '', classId: '' });
-    const [showListView, setShowListView] = useState(false);
 
     // Bottom sheet animation
     const slideAnim = useRef(new Animated.Value(height)).current;
@@ -120,50 +120,14 @@ export default function StudentSearchOverview({
         };
     }, [attendanceData]);
 
-    const startEdit = () => {
-        if (!selectedStudent) return;
-        setEditForm({
-            name: selectedStudent.name,
-            grade: selectedStudent.grade || '',
-            classId: selectedStudent.classId || classes[0]?.id || '',
-        });
-        setIsEditModalVisible(true);
-    };
 
-    const saveEdit = async () => {
-        if (!selectedStudent) return;
-        try {
-            await api.updateStudent({
-                ...selectedStudent,
-                name: editForm.name.trim(),
-                grade: editForm.grade.trim(),
-                classId: editForm.classId || undefined,
-            });
 
-            const updated = {
-                ...selectedStudent,
-                name: editForm.name.trim(),
-                grade: editForm.grade.trim(),
-                classId: editForm.classId || undefined,
-            };
 
-            setSelectedStudent(updated);
-            onStudentUpdate(updated);
-            setIsEditModalVisible(false);
-            if (refreshData) await refreshData();
-            Alert.alert('Success', 'Student updated successfully');
-        } catch (err) {
-            Alert.alert('Error', 'Failed to update student');
-        }
-    };
 
     // Calendar generation
-    const generateCalendar = () => {
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = today.getMonth();
-        const firstDay = new Date(year, month, 1);
-        const lastDay = new Date(year, month + 1, 0);
+    const generateCalendar = (targetYear: number, targetMonth: number) => {
+        const firstDay = new Date(targetYear, targetMonth, 1);
+        const lastDay = new Date(targetYear, targetMonth + 1, 0);
         const daysInMonth = lastDay.getDate();
         const startingDayOfWeek = firstDay.getDay();
 
@@ -171,14 +135,19 @@ export default function StudentSearchOverview({
         for (let i = 0; i < startingDayOfWeek; i++) calendar.push(null);
         for (let day = 1; day <= daysInMonth; day++) calendar.push(day);
 
-        return { calendar, year, month, daysInMonth };
+        return { calendar, year: targetYear, month: targetMonth, daysInMonth };
     };
 
-    const { calendar, year, month } = generateCalendar();
-    const monthNames = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December',
-    ];
+    const [currentDate, setCurrentDate] = useState(new Date());
+    const { calendar, year, month } = generateCalendar(currentDate.getFullYear(), currentDate.getMonth());
+
+    const goToPreviousMonth = () => {
+        setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+    };
+
+    const goToNextMonth = () => {
+        setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+    };
 
     const getAttendanceColor = (day: number | null) => {
         if (!day) return 'transparent';
@@ -216,10 +185,6 @@ export default function StudentSearchOverview({
                         Class: {classes.find(c => c.id === selectedStudent?.classId)?.name || 'Unassigned'}
                     </Text>
                 </View>
-                <TouchableOpacity style={styles.editButton} onPress={startEdit}>
-                    <Ionicons name="pencil" size={20} color="#FFF" />
-                    <Text style={styles.editButtonText}>Edit</Text>
-                </TouchableOpacity>
             </View>
 
             <View style={styles.summarySection}>
@@ -243,56 +208,38 @@ export default function StudentSearchOverview({
 
             <View style={styles.calendarSection}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <TouchableOpacity onPress={goToPreviousMonth}>
+                        <Ionicons name="chevron-back" size={24} color="#3A86FF" />
+                    </TouchableOpacity>
                     <Text style={styles.sectionTitle}>{monthNames[month]} {year}</Text>
-                    {isMobile && (
-                        <TouchableOpacity onPress={() => setShowListView(v => !v)}>
-                            <Text style={{ color: '#3A86FF', fontWeight: '600' }}>
-                                {showListView ? 'Grid' : 'List'} View
-                            </Text>
-                        </TouchableOpacity>
-                    )}
+                    <TouchableOpacity onPress={goToNextMonth}>
+                        <Ionicons name="chevron-forward" size={24} color="#3A86FF" />
+                    </TouchableOpacity>
                 </View>
 
-                {!showListView ? (
-                    <>
-                        <View style={styles.calendarHeader}>
-                            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-                                <Text key={i} style={styles.calendarHeaderDay}>{d}</Text>
-                            ))}
-                        </View>
-                        <View style={styles.calendarGrid}>
-                            {calendar.map((day, idx) => (
-                                <View
-                                    key={idx}
-                                    style={[
-                                        styles.calendarDay,
-                                        { backgroundColor: getAttendanceColor(day) },
-                                        day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear()
-                                            ? styles.todayHighlight
-                                            : null,
-                                    ]}
-                                >
-                                    <Text style={styles.calendarDayText}>{day || ''}</Text>
-                                </View>
-                            ))}
-                        </View>
-                    </>
-                ) : (
-                    <ScrollView style={{ maxHeight: 500 }}>
-                        {Array.from({ length: new Date(year, month + 1, 0).getDate() }, (_, i) => i + 1).map((day) => {
-                            const { text, color } = getAttendanceStatus(day);
-                            return (
-                                <View key={day} style={styles.listDayItem}>
-                                    <Text style={styles.listDayText}>{day} {monthNames[month]}</Text>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                        <View style={[styles.statusDot, { backgroundColor: color }]} />
-                                        <Text style={[styles.listStatusText, { color }]}>{text}</Text>
-                                    </View>
-                                </View>
-                            );
-                        })}
-                    </ScrollView>
-                )}
+                <>
+                    <View style={styles.calendarHeader}>
+                        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                            <Text key={i} style={styles.calendarHeaderDay}>{d}</Text>
+                        ))}
+                    </View>
+                    <View style={styles.calendarGrid}>
+                        {calendar.map((day, idx) => (
+                            <View
+                                key={idx}
+                                style={[
+                                    styles.calendarDay,
+                                    { backgroundColor: getAttendanceColor(day) },
+                                    day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear()
+                                        ? styles.todayHighlight
+                                        : null,
+                                ]}
+                            >
+                                <Text style={styles.calendarDayText}>{day || ''}</Text>
+                            </View>
+                        ))}
+                    </View>
+                </>
 
                 <View style={styles.legend}>
                     <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#4CAF50' }]} /><Text style={styles.legendText}>Present</Text></View>
@@ -449,40 +396,7 @@ export default function StudentSearchOverview({
                 </>
             )}
 
-            {/* Edit Modal */}
-            <Modal visible={isEditModalVisible} animationType={isMobile ? "slide" : "fade"} transparent>
-                <View style={isMobile ? styles.fullScreenModalOverlay : styles.modalOverlay}>
-                    <View style={isMobile ? styles.fullScreenModalContent : styles.modalContent}>
-                        {isMobile && <View style={styles.sheetHandle} />}
-                        <Text style={styles.modalTitle}>Edit Student</Text>
 
-                        <Text style={styles.label}>Name</Text>
-                        <TextInput style={styles.input} value={editForm.name} onChangeText={(t) => setEditForm({ ...editForm, name: t })} />
-
-                        <Text style={styles.label}>Grade</Text>
-                        <TextInput style={styles.input} value={editForm.grade} onChangeText={(t) => setEditForm({ ...editForm, grade: t })} />
-
-                        <Text style={styles.label}>Class</Text>
-                        <View style={styles.pickerContainer}>
-                            <Picker selectedValue={editForm.classId} onValueChange={(v) => setEditForm({ ...editForm, classId: v })}>
-                                <Picker.Item label="Unassigned" value="" />
-                                {classes.map((c) => (
-                                    <Picker.Item key={c.id} label={c.name} value={c.id} />
-                                ))}
-                            </Picker>
-                        </View>
-
-                        <View style={styles.modalButtons}>
-                            <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setIsEditModalVisible(false)}>
-                                <Text style={styles.modalButtonText}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={[styles.modalButton, styles.saveButton]} onPress={saveEdit}>
-                                <Text style={styles.modalButtonText}>Save</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
         </View>
     );
 }

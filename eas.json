@@ -4,12 +4,14 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "apk": {
+      "android": {
+        "gradleCommand": ":app:assembleRelease"
+      }
+    },
     "production": {
       "android": {
         "buildType": "app-bundle",
-        "autoIncrement": true
-      },
-      "ios": {
         "autoIncrement": true
       }
     },

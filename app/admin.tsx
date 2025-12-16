@@ -6,7 +6,7 @@ import { Picker } from '@react-native-picker/picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import AttendanceChart from './components/AttendanceChart';
@@ -75,6 +75,9 @@ export default function Admin() {
         grade: string;
         classId: string;
     }>({ name: "", grade: "", classId: "" });
+
+    // State for custom class picker modal
+    const [classPickerOpen, setClassPickerOpen] = useState(false);
 
     // Fetch data
     const refreshData = async () => {
@@ -192,6 +195,9 @@ export default function Admin() {
         }
     };
 
+    // Add state for selected class ID
+    const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+
     const deleteClass = (classId: string) => {
         console.log("Attempting to delete class:", classId);
         if (Platform.OS === 'web') {
@@ -202,6 +208,11 @@ export default function Admin() {
                         await api.deleteClass(classId);
                         console.log("Class deleted successfully");
                         await refreshData(); // Wait for refresh to complete
+
+                        // If the deleted class was selected, clear the selection
+                        if (selectedClassId === classId) {
+                            setSelectedClassId(null);
+                        }
                     } catch (err) {
                         console.error("Failed to delete class:", err);
                         alert("Failed to delete class");
@@ -225,6 +236,11 @@ export default function Admin() {
                             await api.deleteClass(classId);
                             console.log("Class deleted successfully");
                             await refreshData(); // Wait for refresh to complete
+
+                            // If the deleted class was selected, clear the selection
+                            if (selectedClassId === classId) {
+                                setSelectedClassId(null);
+                            }
                         } catch (err) {
                             console.error("Failed to delete class:", err);
                             Alert.alert("Error", "Failed to delete class");
@@ -570,17 +586,34 @@ export default function Admin() {
                                         <Text style={styles.sectionTitle}>Existing Classes</Text>
                                         <View style={styles.listContainer}>
                                             {classes.map((cls) => (
-                                                <View key={cls.id} style={styles.listItem}>
-                                                    <View>
-                                                        <Text style={styles.listItemTitle}>{cls.name}</Text>
-                                                    </View>
+                                                <TouchableOpacity
+                                                    key={cls.id}
+                                                    style={[
+                                                        styles.listItem,
+                                                        selectedClassId === cls.id && styles.listItemSelected,
+                                                    ]}
+                                                    activeOpacity={0.8}
+                                                    onPress={() => setSelectedClassId(cls.id)}
+                                                >
+                                                    <Text
+                                                        style={[
+                                                            styles.listItemTitle,
+                                                            selectedClassId === cls.id && styles.listItemTitleSelected,
+                                                        ]}
+                                                    >
+                                                        {cls.name}
+                                                    </Text>
+
                                                     <TouchableOpacity
                                                         style={styles.iconButton}
-                                                        onPress={() => deleteClass(cls.id)}
+                                                        onPress={(e) => {
+                                                            e.stopPropagation(); // Prevent triggering the parent onPress
+                                                            deleteClass(cls.id);
+                                                        }}
                                                     >
                                                         <Ionicons name="trash-outline" size={20} color="#F44336" />
                                                     </TouchableOpacity>
-                                                </View>
+                                                </TouchableOpacity>
                                             ))}
                                             {classes.length === 0 && (
                                                 <Text style={styles.emptyText}>No classes created yet</Text>
@@ -665,18 +698,19 @@ export default function Admin() {
                                                             value={editForm.name}
                                                             onChangeText={(text) => setEditForm({ ...editForm, name: text })}
                                                         />
-                                                        <View style={[styles.tableInput, { flex: 1, justifyContent: 'center', padding: 0 }]}>
-                                                            <Picker
-                                                                selectedValue={editForm.classId}
-                                                                style={{ color: '#EAEAEA', backgroundColor: 'transparent', height: 40 }}
-                                                                onValueChange={(itemValue) => setEditForm({ ...editForm, classId: itemValue })}
-                                                                dropdownIconColor="#888"
-                                                            >
-                                                                {classes.map((cls) => (
-                                                                    <Picker.Item key={cls.id} label={cls.name} value={cls.id} color={Platform.OS === 'ios' ? undefined : '#888'} />
-                                                                ))}
-                                                            </Picker>
-                                                        </View>
+                                                        {/* Replace Picker with custom selector */}
+                                                        <TouchableOpacity
+                                                            style={[
+                                                                styles.tableInput,
+                                                                { flex: 1, justifyContent: 'center' },
+                                                            ]}
+                                                            onPress={() => setClassPickerOpen(true)}
+                                                        >
+                                                            <Text style={{ color: '#EAEAEA' }} >
+                                                                {classes.find(c => c.id === editForm.classId)?.name || 'Select class'}
+                                                            </Text>
+                                                        </TouchableOpacity>
+
                                                         <TextInput
                                                             style={[styles.tableInput, { flex: 1 }]}
                                                             value={editForm.grade}
@@ -732,6 +766,40 @@ export default function Admin() {
                     )}
                 </View>
             </View>
+            {/* Custom Class Picker Modal */}
+            <Modal transparent animationType="fade" visible={classPickerOpen}>
+                <Pressable
+                    style={styles.modalBackdrop}
+                    onPress={() => setClassPickerOpen(false)}
+                >
+                    <View style={styles.modalCard}>
+                        <ScrollView>
+                            {classes.map(cls => (
+                                <TouchableOpacity
+                                    key={cls.id}
+                                    style={[
+                                        styles.modalItem,
+                                        editForm.classId === cls.id && styles.modalItemSelected,
+                                    ]}
+                                    onPress={() => {
+                                        setEditForm({ ...editForm, classId: cls.id });
+                                        setClassPickerOpen(false);
+                                    }}
+                                >
+                                    <Text
+                                        style={[
+                                            styles.modalItemText,
+                                            editForm.classId === cls.id && styles.modalItemTextSelected,
+                                        ]}
+                                    >
+                                        {cls.name}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </Pressable>
+            </Modal>
         </View>
     );
 }
@@ -909,18 +977,30 @@ const styles = StyleSheet.create({
     },
     listItem: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        backgroundColor: '#121212',
-        padding: 12,
-        borderRadius: 8,
+        justifyContent: 'space-between',
+        padding: 14,
+        borderRadius: 10,
+        backgroundColor: '#1E1E1E',
+        marginBottom: 10,
         borderWidth: 1,
-        borderColor: '#2D2D2D',
+        borderColor: '#2A2A2A',
     },
+
+    listItemSelected: {
+        backgroundColor: '#2563EB', // blue highlight
+        borderColor: '#3B82F6',
+    },
+
     listItemTitle: {
-        color: '#EAEAEA',
-        fontWeight: '600',
         fontSize: 16,
+        color: '#E5E7EB',
+        fontWeight: '500',
+    },
+
+    listItemTitleSelected: {
+        color: '#FFFFFF',
+        fontWeight: '600',
     },
     deleteButton: {
         backgroundColor: '#F44336',
@@ -1050,5 +1130,39 @@ const styles = StyleSheet.create({
         padding: 4,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+
+    // Custom class picker modal styles
+    modalBackdrop: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+
+    modalCard: {
+        backgroundColor: '#1E1E1E',
+        borderRadius: 12,
+        width: '80%',
+        padding: 12,
+        maxHeight: '60%',
+    },
+
+    modalItem: {
+        padding: 14,
+        borderRadius: 8,
+    },
+
+    modalItemSelected: {
+        backgroundColor: '#2563EB',
+    },
+
+    modalItemText: {
+        color: '#EAEAEA',
+    },
+
+    modalItemTextSelected: {
+        color: '#FFF',
+        fontWeight: '600',
     },
 });
