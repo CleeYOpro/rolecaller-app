@@ -41,12 +41,14 @@ export const syncPullSchoolData = async (schoolId: string) => {
         // NOTE: We do NOT clear schoolsLocal here anymore, because we want to keep
         // credentials for other schools available for offline login.
         // Schools are managed by syncSchoolsToLocal or updated individually.
+        // We also do NOT clear teachersLocal as it contains device-wide teacher info.
+        // We also do NOT clear attendanceLocal as it may contain unsynced attendance data.
 
-        await localDb.delete(attendanceLocal).where(sql`1=1`);
         await localDb.delete(classesLocal).where(sql`1=1`);
         await localDb.delete(studentsLocal).where(sql`1=1`);
         // await localDb.delete(schoolsLocal).where(sql`1=1`); <--- REMOVED
-        await localDb.delete(teachersLocal).where(sql`1=1`);
+        // await localDb.delete(teachersLocal).where(sql`1=1`); <--- REMOVED
+        // await localDb.delete(attendanceLocal).where(sql`1=1`); <--- REMOVED
 
         // 2. Fetch from Neon
         const schoolRes = await db.select().from(schools).where(eq(schools.id, schoolId));
@@ -144,51 +146,37 @@ export const syncPushAttendance = async () => {
 
         let pushedCount = 0;
 
+        // Get teacher name from local database (any teacher name, not specific to school)
+        let teacherName = null;
+        try {
+            // Get any teacher from the local database
+            const localTeacherRecords = await localDb
+                .select()
+                .from(teachersLocal)
+                .limit(1);
+
+            if (localTeacherRecords.length > 0) {
+                teacherName = localTeacherRecords[0].name;
+                console.log(`Using local teacher name: ${teacherName}`);
+            }
+        } catch (err) {
+            console.warn('Could not get local teacher name:', err);
+        }
+
         // Process each class separately
         for (const classId of Object.keys(recordsByClass)) {
             const classRecords = recordsByClass[classId];
 
-            // Get the school ID for this class
-            const classInfo = await localDb.select().from(classesLocal).where(eq(classesLocal.id, classId)).limit(1);
-            if (classInfo.length === 0) {
-                console.warn(`Could not find class with ID: ${classId}`);
-                continue;
-            }
-
-            const schoolId = classInfo[0].schoolId;
-
-            // Get teacher name for this school
-            let teacherName = null;
-            try {
-                const teacherRecords = await localDb
-                    .select()
-                    .from(teachersLocal)
-                    .where(eq(teachersLocal.schoolId, schoolId))
-                    .limit(1);
-
-                if (teacherRecords.length > 0) {
-                    teacherName = teacherRecords[0].name;
-                }
-            } catch (err) {
-                console.warn('Could not get teacher name:', err);
-            }
-
-            // Prepare records with teacher name for this class
-            const recordsWithTeacher = classRecords.map(record => ({
-                ...record,
-                teacherName
-            }));
-
             // Push to API
             try {
                 // Process each record individually using markAttendance
-                for (const record of recordsWithTeacher) {
+                for (const record of classRecords) {
                     await api.markAttendance(
                         record.studentId,
                         record.classId,
                         record.date,
                         record.status as any,
-                        record.teacherName || undefined
+                        teacherName || undefined
                     );
                 }
                 console.log(`Pushed ${classRecords.length} records for class ${classId} with teacher: ${teacherName}`);

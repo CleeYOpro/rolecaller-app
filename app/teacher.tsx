@@ -25,20 +25,7 @@ export default function TeacherDashboard() {
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [isSyncing, setIsSyncing] = useState(false);
     const [showSearchView, setShowSearchView] = useState(false);
-
-    // Add state
     const [unsyncedCount, setUnsyncedCount] = useState(0);
-
-    // Add effect to watch unsynced
-    useEffect(() => {
-        const updateUnsynced = async () => {
-            const count = await attendanceService.getUnsyncedCount();
-            setUnsyncedCount(count);
-        };
-        updateUnsynced();
-        const interval = setInterval(updateUnsynced, 5000); // 5 sec
-        return () => clearInterval(interval);
-    }, []);
 
     // Fetch students on mount (from SQLite)
     useEffect(() => {
@@ -71,8 +58,30 @@ export default function TeacherDashboard() {
         }
     }, [classId, today]);
 
+    // Add effect to watch unsynced
+    useEffect(() => {
+        const updateUnsynced = async () => {
+            const count = await attendanceService.getUnsyncedCount();
+            setUnsyncedCount(count);
+        };
+        updateUnsynced();
+        const interval = setInterval(updateUnsynced, 5000); // 5 sec
+        return () => clearInterval(interval);
+    }, []);
+
+    // Update unsynced count when attendance changes
+    useEffect(() => {
+        const updateUnsynced = async () => {
+            const count = await attendanceService.getUnsyncedCount();
+            setUnsyncedCount(count);
+        };
+        updateUnsynced();
+    }, [attendance]);
+
     const markAttendance = async (studentId: string, status: AttendanceStatus) => {
-        // Optimistic update
+        // 保存当前状态以便在出错时回退
+        const previousAttendance = { ...attendance };
+        // 乐观更新状态
         setAttendance(prev => ({
             ...prev,
             [studentId]: status
@@ -81,9 +90,15 @@ export default function TeacherDashboard() {
         try {
             await attendanceService.markAttendance(studentId, classId, today, status);
             setToastMessage(`Attendance marked as ${status}`);
+
+            // 更新未同步计数
+            const count = await attendanceService.getUnsyncedCount();
+            setUnsyncedCount(count);
         } catch (err) {
             console.error("Failed to mark attendance", err);
             setToastMessage("Failed to save attendance");
+            // 如果失败，回退到之前的状态
+            setAttendance(previousAttendance);
         }
     };
 

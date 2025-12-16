@@ -131,20 +131,21 @@ export const attendanceService = {
         .from(attendanceLocal)
         .where(eq(attendanceLocal.synced, 'false'));
       return result[0]?.count || 0;
-    } catch {
+    } catch (err) {
+      console.error('Failed to get unsynced count:', err);
       return 0;
     }
   },
-  
-  // Save teacher name for a school
+
+  // Save teacher name 
   saveTeacherName: async (schoolId: string, teacherName: string) => {
     try {
-      // Check if teacher name already exists for this school
+      // Check if a teacher name exists for this school
       const existing = await localDb.select()
         .from(teachersLocal)
         .where(eq(teachersLocal.schoolId, schoolId))
         .limit(1);
-        
+
       if (existing.length > 0) {
         // Update existing record
         await localDb.update(teachersLocal)
@@ -153,32 +154,36 @@ export const attendanceService = {
             createdAt: new Date().toISOString()
           })
           .where(eq(teachersLocal.schoolId, schoolId));
+        console.log(`Teacher name updated: ${teacherName}`);
       } else {
         // Insert new record
+        const teacherId = generateUuid();
         await localDb.insert(teachersLocal).values({
-          id: generateUuid(),
+          id: teacherId,
           schoolId,
           name: teacherName,
           createdAt: new Date().toISOString()
         });
+        console.log(`Teacher name saved with ID ${teacherId}: ${teacherName}`);
       }
     } catch (err) {
       console.error('Failed to save teacher name:', err);
-      throw err;
     }
   },
-  
-  // Get teacher name for a school
+
+  // Get teacher name 
   getTeacherName: async (schoolId: string): Promise<string | null> => {
     try {
       const result = await localDb.select()
         .from(teachersLocal)
         .where(eq(teachersLocal.schoolId, schoolId))
         .limit(1);
-        
+
       if (result.length > 0) {
+        console.log(`Retrieved teacher name: ${result[0].name}`);
         return result[0].name;
       }
+      console.log(`No teacher name found for school ${schoolId}`);
       return null;
     } catch (err) {
       console.error('Failed to get teacher name:', err);

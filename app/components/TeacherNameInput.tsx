@@ -22,27 +22,29 @@ export default function TeacherNameInput({ schoolId, onNameSaved }: TeacherNameI
 
     setIsLoading(true);
     try {
-      // Check if teacher name already exists for this school
+      // Check if any teacher name already exists
       const existingTeachers = await localDb
         .select()
         .from(teachersLocal)
-        .where(eq(teachersLocal.schoolId, schoolId))
         .limit(1);
 
       if (existingTeachers.length > 0) {
         // Teacher name already exists, continue
+        console.log(`Teacher name already exists: ${existingTeachers[0].name}`);
         onNameSaved();
         return;
       }
 
       // Save new teacher name
+      const teacherId = generateUuid();
       await localDb.insert(teachersLocal).values({
-        id: generateUuid(),
-        schoolId: schoolId,
+        id: teacherId,
+        schoolId: schoolId, // Still store schoolId for reference
         name: teacherName.trim(),
         createdAt: new Date().toISOString(),
       });
 
+      console.log(`Teacher name "${teacherName.trim()}" saved with ID ${teacherId}`);
       onNameSaved();
     } catch (error) {
       console.error('Error saving teacher name:', error);
