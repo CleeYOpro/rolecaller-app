@@ -1,7 +1,7 @@
 import { generateUuid, localDb, teachersLocal } from '@/database/localdb';
-import { eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';  // Added missing import
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 interface TeacherNameInputProps {
@@ -12,7 +12,29 @@ interface TeacherNameInputProps {
 export default function TeacherNameInput({ schoolId, onNameSaved }: TeacherNameInputProps) {
   const [teacherName, setTeacherName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [existingTeacherId, setExistingTeacherId] = useState<string | null>(null);
   const router = useRouter();
+
+  // Load existing teacher name if available
+  useEffect(() => {
+    const loadExistingTeacherName = async () => {
+      try {
+        const existingTeachers = await localDb
+          .select()
+          .from(teachersLocal)
+          .limit(1);
+
+        if (existingTeachers.length > 0) {
+          setTeacherName(existingTeachers[0].name);
+          setExistingTeacherId(existingTeachers[0].id);
+        }
+      } catch (error) {
+        console.error('Error loading existing teacher name:', error);
+      }
+    };
+
+    loadExistingTeacherName();
+  }, []);
 
   const handleSaveName = async () => {
     if (!teacherName.trim()) {
@@ -22,29 +44,26 @@ export default function TeacherNameInput({ schoolId, onNameSaved }: TeacherNameI
 
     setIsLoading(true);
     try {
-      // Check if any teacher name already exists
-      const existingTeachers = await localDb
-        .select()
-        .from(teachersLocal)
-        .limit(1);
+      if (existingTeacherId) {
+        // Update existing teacher name
+        await localDb.update(teachersLocal)
+          .set({ name: teacherName.trim() })
+          .where(eq(teachersLocal.id, existingTeacherId));
+          
+        console.log(`Teacher name updated to "${teacherName.trim()}"`);
+      } else {
+        // Save new teacher name
+        const teacherId = generateUuid();
+        await localDb.insert(teachersLocal).values({
+          id: teacherId,
+          schoolId: schoolId,
+          name: teacherName.trim(),
+          createdAt: new Date().toISOString(),
+        });
 
-      if (existingTeachers.length > 0) {
-        // Teacher name already exists, continue
-        console.log(`Teacher name already exists: ${existingTeachers[0].name}`);
-        onNameSaved();
-        return;
+        console.log(`Teacher name "${teacherName.trim()}" saved with ID ${teacherId}`);
       }
-
-      // Save new teacher name
-      const teacherId = generateUuid();
-      await localDb.insert(teachersLocal).values({
-        id: teacherId,
-        schoolId: schoolId, // Still store schoolId for reference
-        name: teacherName.trim(),
-        createdAt: new Date().toISOString(),
-      });
-
-      console.log(`Teacher name "${teacherName.trim()}" saved with ID ${teacherId}`);
+      
       onNameSaved();
     } catch (error) {
       console.error('Error saving teacher name:', error);
@@ -83,7 +102,7 @@ export default function TeacherNameInput({ schoolId, onNameSaved }: TeacherNameI
             disabled={isLoading}
           >
             <Text style={styles.buttonText}>
-              {isLoading ? 'Saving...' : 'Continue'}
+              {isLoading ? 'Saving...' : existingTeacherId ? 'Update Name' : 'Continue'}
             </Text>
           </TouchableOpacity>
 

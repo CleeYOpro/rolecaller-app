@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // app/index.tsx - CORRECT imports
-import { classesLocal, localDb, schoolsLocal, teachersLocal } from '@/database/localdb';
+import { localDb, schoolsLocal, teachersLocal } from '@/database/localdb';
 import { attendanceService } from '@/services/attendanceService';
 import { syncSchoolsToLocal } from '@/services/offlineSync';
 import { isOnline } from '@/utils/connectivity';
@@ -34,26 +34,48 @@ export default function LoginPage() {
 
 
     // Fetch schools on mount
-    const fetchSchools = () => {
+    const fetchSchools = async () => {
         setError("");
-        api.getSchools()
-            .then((schools) => {
-                console.log("Fetched schools:", schools);
-                setSchools(schools);
-                // Sync to local DB for offline login
-                syncSchoolsToLocal(schools);
+        try {
+            const schoolsData = await api.getSchools();
+            console.log("Fetched schools:", schoolsData);
+            setSchools(schoolsData);
 
-                if (schools.length === 0) {
-                    setError("No schools found. Please make sure the API server is running.");
+            // Only sync to local DB if we got data
+            if (schoolsData && schoolsData.length > 0) {
+                // Sync to local DB for offline login
+                await syncSchoolsToLocal(schoolsData);
+            }
+
+            if (!schoolsData || schoolsData.length === 0) {
+                setError("No schools found. Please make sure the API server is running.");
+            }
+        } catch (err: any) {
+            console.error("Failed to fetch schools from API:", err);
+            // Try to load schools from local database when API fails
+            try {
+                const localSchools = await localDb.select().from(schoolsLocal);
+                if (localSchools.length > 0) {
+                    console.log("Loaded schools from local database:", localSchools);
+                    const mappedSchools = localSchools.map(school => ({
+                        id: school.id,
+                        name: school.name,
+                        email: school.email,
+                        address: school.address || undefined
+                    }));
+                    setSchools(mappedSchools);
+                } else {
+                    setError("No schools found. Please connect to the internet and try again.");
                 }
-            })
-            .catch(err => {
-                console.error("Failed to fetch schools", err);
-                setError(`Failed to connect to server: ${err.message}`);
-            });
+            } catch (localErr) {
+                console.error("Failed to load schools from local database:", localErr);
+                setError("Failed to load schools. Please check your connection and try again.");
+            }
+        }
     };
 
     React.useEffect(() => {
+        // Always fetch schools on initial mount
         fetchSchools();
     }, []);
 
@@ -66,115 +88,14 @@ export default function LoginPage() {
         setSelectedClass(null);
         setAvailableClasses([]);
         setNeedsNameInput(false);
+
+        // Re-fetch schools when going back to login
+        fetchSchools();
     };
 
     const handleTeacherLogin = async () => {
         setRole("teacher");
-
-        // Check if we have any offline data
-        const hasData = await attendanceService.hasOfflineData();
-
-        if (hasData) {
-            // Try to get saved school info
-            const savedSchool = await storage.getSchool();
-
-            if (savedSchool) {
-                // Find the school in our list
-                const school = schools.find(s => s.id === savedSchool.id);
-
-                if (school) {
-                    // Pre-select the saved school
-                    setSelectedSchool(school);
-                    setSchoolEmail(school.email);
-                }
-            }
-
-            // Show school picker to allow changing school or entering password
-            setShowSchoolPicker(true);
-        } else {
-            // First time login - show school picker
-            setShowSchoolPicker(true);
-        }
-    };
-
-    const checkTeacherName = async (schoolId: string) => {
-        try {
-            // Check if any teacher name exists in the local database
-            const existingTeachers = await localDb
-                .select()
-                .from(teachersLocal)
-                .limit(1);
-
-            if (existingTeachers.length === 0) {
-                // No teacher name found, need to input name
-                console.log(`No existing teacher name found, showing name input`);
-                setNeedsNameInput(true);
-            } else {
-                // Teacher name exists, continue to class selection
-                console.log(`Found existing teacher name: ${existingTeachers[0].name}`);
-                try {
-                    // Check if we're offline to determine where to fetch classes from
-                    let classes;
-                    if (!isOnline()) {
-                        // Offline - fetch classes from local database
-                        const localClasses = await localDb
-                            .select()
-                            .from(classesLocal)
-                            .where(eq(classesLocal.schoolId, schoolId));
-
-                        classes = localClasses.map(c => ({
-                            id: c.id,
-                            schoolId: c.schoolId,
-                            name: c.name
-                        }));
-                    } else {
-                        // Online - fetch classes from API
-                        classes = await api.getClasses(schoolId);
-                    }
-
-                    if (classes.length === 0) {
-                        Alert.alert("No Classes", "There are no classes set up for this school yet.");
-                    } else {
-                        setAvailableClasses(classes);
-                    }
-                } catch (err) {
-                    console.error("Failed to fetch classes", err);
-                    Alert.alert("Error", "Failed to load classes");
-                }
-            }
-        } catch (error) {
-            console.error("Error checking teacher name:", error);
-            // In case of error, continue to class selection
-            try {
-                // Check if we're offline to determine where to fetch classes from
-                let classes;
-                if (!isOnline()) {
-                    // Offline - fetch classes from local database
-                    const localClasses = await localDb
-                        .select()
-                        .from(classesLocal)
-                        .where(eq(classesLocal.schoolId, schoolId));
-
-                    classes = localClasses.map(c => ({
-                        id: c.id,
-                        schoolId: c.schoolId,
-                        name: c.name
-                    }));
-                } else {
-                    // Online - fetch classes from API
-                    classes = await api.getClasses(schoolId);
-                }
-
-                if (classes.length === 0) {
-                    Alert.alert("No Classes", "There are no classes set up for this school yet.");
-                } else {
-                    setAvailableClasses(classes);
-                }
-            } catch (err) {
-                console.error("Failed to fetch classes", err);
-                Alert.alert("Error", "Failed to load classes");
-            }
-        }
+        setShowSchoolPicker(true);
     };
 
     const handleLogin = async () => {
@@ -191,11 +112,8 @@ export default function LoginPage() {
             const hasLocalSchool = await attendanceService.hasOfflineData();
             const isSameSchool = hasLocalSchool && (await storage.getSchool())?.id === selectedSchool.id;
 
-            let isOfflineLogin = false;
-
             // If offline login for a school that was previously logged into
-            if (!isOnline() && isSameSchool) {
-                isOfflineLogin = true;
+            if (!(await isOnline()) && isSameSchool) {
                 // Verify password against local database
                 const localSchools = await localDb.select()
                     .from(schoolsLocal)
@@ -213,6 +131,19 @@ export default function LoginPage() {
 
                 // For offline login, we don't need to sync data, it should already be there
                 console.log("Offline login successful, using existing local data");
+
+                // Save school credentials to storage
+                await storage.saveSchool(selectedSchool.id, selectedSchool.name);
+
+                if (role === "admin") {
+                    router.push({
+                        pathname: "/admin",
+                        params: { schoolId: selectedSchool.id, schoolName: selectedSchool.name }
+                    });
+                } else if (role === "teacher") {
+                    // For teachers, show the name input screen
+                    setNeedsNameInput(true);
+                }
             } else {
                 // Online login - verify credentials via API
                 await api.login(schoolEmail, schoolPassword);
@@ -228,22 +159,47 @@ export default function LoginPage() {
                     console.error("Silent sync failed:", err);
                     // Non-blocking error, continue to login
                 }
-            }
 
-            if (role === "admin") {
-                router.push({
-                    pathname: "/admin",
-                    params: { schoolId: selectedSchool.id, schoolName: selectedSchool.name }
-                });
-            } else if (role === "teacher") {
-                // Check for teacher name (works offline if previously synced)
-                await checkTeacherName(selectedSchool.id);
+                if (role === "admin") {
+                    router.push({
+                        pathname: "/admin",
+                        params: { schoolId: selectedSchool.id, schoolName: selectedSchool.name }
+                    });
+                } else if (role === "teacher") {
+                    // For teachers, show the name input screen
+                    setNeedsNameInput(true);
+                }
             }
         } catch (err: any) {
             console.error("Login error:", err);
             setError(err.message || "Invalid credentials or connection error");
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const checkTeacherName = async (schoolId: string) => {
+        try {
+            // Check if any teacher name exists in the local database
+            const existingTeachers = await localDb
+                .select()
+                .from(teachersLocal)
+                .limit(1);
+
+            if (existingTeachers.length === 0) {
+                // No teacher name found, need to input name
+                console.log(`No existing teacher name found, showing name input`);
+                setNeedsNameInput(true);
+            } else {
+                // Teacher name exists, but don't automatically fetch classes
+                console.log(`Found existing teacher name: ${existingTeachers[0].name}`);
+                // Just show the name input screen to confirm or change the name
+                setNeedsNameInput(true);
+            }
+        } catch (error) {
+            console.error("Error checking teacher name:", error);
+            // In case of error, still show name input screen
+            setNeedsNameInput(true);
         }
     };
 
