@@ -1,5 +1,5 @@
 import { generateUuid, localDb, teachersLocal } from '@/database/localdb';
-import { eq } from 'drizzle-orm';  // Added missing import
+import { eq } from 'drizzle-orm'; // Added missing import
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -49,7 +49,7 @@ export default function TeacherNameInput({ schoolId, onNameSaved }: TeacherNameI
         await localDb.update(teachersLocal)
           .set({ name: teacherName.trim() })
           .where(eq(teachersLocal.id, existingTeacherId));
-          
+
         console.log(`Teacher name updated to "${teacherName.trim()}"`);
       } else {
         // Save new teacher name
@@ -63,7 +63,7 @@ export default function TeacherNameInput({ schoolId, onNameSaved }: TeacherNameI
 
         console.log(`Teacher name "${teacherName.trim()}" saved with ID ${teacherId}`);
       }
-      
+
       onNameSaved();
     } catch (error) {
       console.error('Error saving teacher name:', error);
@@ -102,7 +102,7 @@ export default function TeacherNameInput({ schoolId, onNameSaved }: TeacherNameI
             disabled={isLoading}
           >
             <Text style={styles.buttonText}>
-              {isLoading ? 'Saving...' : existingTeacherId ? 'Update Name' : 'Continue'}
+              {isLoading ? 'Saving...' : existingTeacherId ? 'Update & Continue' : 'Continue'}
             </Text>
           </TouchableOpacity>
 

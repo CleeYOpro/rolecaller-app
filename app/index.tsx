@@ -281,7 +281,7 @@ export default function LoginPage() {
             <View style={styles.container}>
                 <StatusBar style="light" />
                 <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Select ya Class</Text>
+                    <Text style={styles.cardTitle}>Select Your Class</Text>
                     <Text style={styles.cardSubtitle}>Choose a class to take attendance</Text>
 
                     <ScrollView style={styles.classList}>

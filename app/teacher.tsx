@@ -159,11 +159,14 @@ export default function TeacherDashboard() {
     }, [toastMessage]);
 
     const goBack = () => {
-        if (router.canGoBack()) {
-            router.back();
-        } else {
-            router.replace("/");
-        }
+        // Navigate back to class selection instead of login screen
+        router.replace({
+            pathname: "/teacher",
+            params: {
+                schoolId,
+                schoolName,
+            },
+        });
     };
 
     if (!classId) {
