@@ -37,7 +37,20 @@ export const syncPullSchoolData = async (schoolId: string) => {
     console.log('Starting sync pull for school:', schoolId);
 
     try {
-        // 1. Clear existing local data for all tables to ensure proper school isolation
+        // 1. Fetch from Neon FIRST to ensure we have internet/connection
+        // If this fails, we throw and DO NOT touch local data
+        const schoolRes = await db.select().from(schools).where(eq(schools.id, schoolId));
+        const classesRes = await db.select().from(classes).where(eq(classes.schoolId, schoolId));
+        const studentsRes = await db.select().from(students).where(eq(students.schoolId, schoolId));
+
+        if (schoolRes.length === 0) {
+            console.error('School not found online');
+            return;
+        }
+
+        const school = schoolRes[0];
+
+        // 2. Clear existing local data only after successful fetch
         // NOTE: We do NOT clear schoolsLocal here anymore, because we want to keep
         // credentials for other schools available for offline login.
         // Schools are managed by syncSchoolsToLocal or updated individually.
@@ -49,18 +62,6 @@ export const syncPullSchoolData = async (schoolId: string) => {
         // await localDb.delete(schoolsLocal).where(sql`1=1`); <--- REMOVED
         // await localDb.delete(teachersLocal).where(sql`1=1`); <--- REMOVED
         // await localDb.delete(attendanceLocal).where(sql`1=1`); <--- REMOVED
-
-        // 2. Fetch from Neon
-        const schoolRes = await db.select().from(schools).where(eq(schools.id, schoolId));
-        const classesRes = await db.select().from(classes).where(eq(classes.schoolId, schoolId));
-        const studentsRes = await db.select().from(students).where(eq(students.schoolId, schoolId));
-
-        if (schoolRes.length === 0) {
-            console.error('School not found online');
-            return;
-        }
-
-        const school = schoolRes[0];
 
         // 3. Save to SQLite
         // Save School
@@ -144,7 +145,7 @@ export const syncPushAttendance = async () => {
             recordsByClass[record.classId].push(record);
         });
 
-        let pushedCount = 0;
+        const successfulRecordIds: string[] = [];
 
         // Get teacher name from local database (any teacher name, not specific to school)
         let teacherName = null;
@@ -167,10 +168,9 @@ export const syncPushAttendance = async () => {
         for (const classId of Object.keys(recordsByClass)) {
             const classRecords = recordsByClass[classId];
 
-            // Push to API
-            try {
-                // Process each record individually using markAttendance
-                for (const record of classRecords) {
+            // Process each record individually
+            for (const record of classRecords) {
+                try {
                     await api.markAttendance(
                         record.studentId,
                         record.classId,
@@ -178,29 +178,36 @@ export const syncPushAttendance = async () => {
                         record.status as any,
                         teacherName || undefined
                     );
+                    // If successful, track the ID
+                    successfulRecordIds.push(record.id);
+                } catch (err) {
+                    // Log error but continue with other records
+                    console.error(`Failed to push record ${record.id} for class ${classId}:`, err);
                 }
-                console.log(`Pushed ${classRecords.length} records for class ${classId} with teacher: ${teacherName}`);
-                pushedCount += classRecords.length;
-            } catch (err) {
-                console.error(`Failed to push records for class ${classId}:`, err);
-                // Continue with other classes even if one fails
             }
         }
 
-        // Mark all successfully pushed records as synced
-        // In a production app, you might want to be more selective about this
-        for (const record of unsynced) {
-            try {
-                await localDb.update(attendanceLocal)
-                    .set({ synced: 'true' })
-                    .where(eq(attendanceLocal.id, record.id));
-            } catch (err) {
-                console.warn(`Failed to mark record ${record.id} as synced:`, err);
+        console.log(`Successfully pushed ${successfulRecordIds.length} out of ${unsynced.length} records`);
+
+        // Mark ONLY successfully pushed records as synced
+        if (successfulRecordIds.length > 0) {
+            for (const recordId of successfulRecordIds) {
+                try {
+                    await localDb.update(attendanceLocal)
+                        .set({ synced: 'true' })
+                        .where(eq(attendanceLocal.id, recordId));
+                } catch (err) {
+                    console.warn(`Failed to mark record ${recordId} as synced:`, err);
+                }
             }
         }
 
-        console.log(`Successfully pushed ${pushedCount} attendance records`);
-        return { success: true, pushed: pushedCount };
+        // If we had unsynced records but pushed NONE, consider it a failure (unless there were 0 to begin with, handled above)
+        if (successfulRecordIds.length === 0 && unsynced.length > 0) {
+            throw new Error("Failed to sync any records. Check internet connection.");
+        }
+
+        return { success: true, pushed: successfulRecordIds.length };
     } catch (err) {
         console.error('Fatal error during attendance sync:', err);
         return { success: false, error: (err as Error).message };
