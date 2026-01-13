@@ -2,8 +2,8 @@ import { ConfigContext, ExpoConfig } from 'expo/config';
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
     ...config,
-    name: "rolecaller-app",
-    slug: "rolecaller-app",
+    name: "rolecaller",
+    slug: "rolecaller",
     version: "1.3.3",
     orientation: "portrait",
     icon: "./assets/logo.png",
@@ -16,7 +16,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     extra: {
         DATABASE_URL: process.env.DATABASE_URL,
         eas: {
-            projectId: "052e19fd-a1b0-458b-9541-fcc6ddc57cd0"
+            projectId: "6ab26f08-0cf3-4e63-be7e-25ea17169881"
         }
     },
     ios: {
