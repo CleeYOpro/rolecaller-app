@@ -104,18 +104,16 @@ export default function StudentSearchOverview({
 
     // Attendance summary
     const attendanceSummary = useMemo(() => {
-        const summary = { present: 0, late: 0, absent: 0 };
+        const summary = { present: 0, absent: 0 };
         Object.values(attendanceData).forEach((status) => {
             if (status === 'present') summary.present++;
-            else if (status === 'late') summary.late++;
             else if (status === 'absent') summary.absent++;
         });
-        const total = summary.present + summary.late + summary.absent;
+        const total = summary.present + summary.absent;
         return {
             ...summary,
             total,
             presentPercent: total > 0 ? Math.round((summary.present / total) * 100) : 0,
-            latePercent: total > 0 ? Math.round((summary.late / total) * 100) : 0,
             absentPercent: total > 0 ? Math.round((summary.absent / total) * 100) : 0,
         };
     }, [attendanceData]);
@@ -154,7 +152,6 @@ export default function StudentSearchOverview({
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const status = attendanceData[dateStr];
         if (status === 'present') return '#4CAF50';
-        if (status === 'late') return '#ED6C02';
         if (status === 'absent') return '#D32F2F';
         return 'transparent';
     };
@@ -163,7 +160,6 @@ export default function StudentSearchOverview({
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const status = attendanceData[dateStr];
         if (status === 'present') return { text: 'Present', color: '#4CAF50' };
-        if (status === 'late') return { text: 'Late', color: '#ED6C02' };
         if (status === 'absent') return { text: 'Absent', color: '#D32F2F' };
         return { text: 'No Data', color: '#666' };
     };
@@ -192,7 +188,6 @@ export default function StudentSearchOverview({
                 <View style={styles.chartContainer}>
                     {[
                         { label: 'Present', percent: attendanceSummary.presentPercent, count: attendanceSummary.present, color: '#4CAF50' },
-                        { label: 'Late', percent: attendanceSummary.latePercent, count: attendanceSummary.late, color: '#ED6C02' },
                         { label: 'Absent', percent: attendanceSummary.absentPercent, count: attendanceSummary.absent, color: '#D32F2F' },
                     ].map((item) => (
                         <View key={item.label} style={styles.chartRow}>
@@ -243,7 +238,6 @@ export default function StudentSearchOverview({
 
                 <View style={styles.legend}>
                     <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#4CAF50' }]} /><Text style={styles.legendText}>Present</Text></View>
-                    <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#ED6C02' }]} /><Text style={styles.legendText}>Late</Text></View>
                     <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#D32F2F' }]} /><Text style={styles.legendText}>Absent</Text></View>
                     <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#555' }]} /><Text style={styles.legendText}>No Data</Text></View>
                 </View>

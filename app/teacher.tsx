@@ -89,28 +89,68 @@ export default function TeacherDashboard() {
 
   const markAttendance = async (studentId: string, status: AttendanceStatus) => {
     const previousAttendance = { ...attendance };
-    const newStatus = attendance[studentId] === status ? null : status; // Toggle off if already selected
+    const currentStatus = attendance[studentId];
+    const newStatus = currentStatus === status ? null : status; // Toggle off if already selected
 
     // Optimistic update
-    setAttendance(prev => ({
-      ...prev,
-      [studentId]: newStatus ?? 'present', // Default to present if cleared
-    }));
+    setAttendance(prev => {
+      const next = { ...prev };
+      if (newStatus) {
+        next[studentId] = newStatus;
+      } else {
+        delete next[studentId];
+      }
+      return next;
+    });
 
     try {
-      await attendanceService.markAttendance(
-        studentId,
-        classId,
-        today,
-        newStatus ?? 'present'
-      );
-      setToastMessage(`Marked as ${newStatus ?? 'present'}`);
+      if (newStatus) {
+        await attendanceService.markAttendance(
+          studentId,
+          classId,
+          today,
+          newStatus
+        );
+        setToastMessage(`Marked as ${newStatus}`);
+      } else {
+        await attendanceService.deleteAttendance(studentId, today);
+        setToastMessage(`Unmarked`);
+      }
+
       const count = await attendanceService.getUnsyncedCount();
       setUnsyncedCount(count);
     } catch (err) {
       console.error("Failed to mark attendance", err);
       setToastMessage("Failed to save attendance");
       setAttendance(previousAttendance);
+    }
+  };
+
+  const markAllPresent = async () => {
+    // defaults to all students unless filtered logic is desired, usually mark all in class
+    const targets = students;
+
+    // Optimistic
+    const newAttendance = { ...attendance };
+    targets.forEach(s => {
+      newAttendance[s.id] = 'present';
+    });
+    setAttendance(newAttendance);
+    setToastMessage("Marking all present...");
+
+    try {
+      await Promise.all(targets.map(s =>
+        attendanceService.markAttendance(s.id, classId, today, 'present')
+      ));
+      setToastMessage("All marked present!");
+      const count = await attendanceService.getUnsyncedCount();
+      setUnsyncedCount(count);
+    } catch (err) {
+      console.error("Failed to mark all present", err);
+      setToastMessage("Failed to mark all");
+      // Revert by fetching real state
+      const updated = await attendanceService.getAttendance(classId, today);
+      setAttendance(updated);
     }
   };
 
@@ -268,6 +308,26 @@ export default function TeacherDashboard() {
           </View>
 
           {/* Search Bar */}
+          <View style={{ marginBottom: 12 }}>
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#1E1E1E',
+                paddingVertical: 12,
+                borderRadius: 8,
+                alignItems: 'center',
+                borderWidth: 1,
+                borderColor: '#3A86FF',
+                flexDirection: 'row',
+                justifyContent: 'center',
+                gap: 8
+              }}
+              onPress={markAllPresent}
+            >
+              <Ionicons name="checkmark-done-circle" size={20} color="#3A86FF" />
+              <Text style={{ color: '#3A86FF', fontWeight: 'bold', fontSize: 16 }}>Mark Everyone Present</Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.searchContainer}>
             <Ionicons name="search" size={20} color="#888" style={styles.searchIcon} />
             <TextInput
@@ -292,7 +352,7 @@ export default function TeacherDashboard() {
           ) : (
             <View style={styles.studentList}>
               {filteredStudents.map((s) => {
-                const status = attendance[s.id] ?? 'present'; // Default to present
+                const status = attendance[s.id]; // No default
                 return (
                   <View key={s.id} style={styles.studentItem}>
                     <View style={styles.studentInfo}>
@@ -309,15 +369,16 @@ export default function TeacherDashboard() {
                       <TouchableOpacity
                         style={[
                           styles.actionButton,
-                          status === 'present' && styles.activeActionButton,
-                          { borderColor: '#4CAF50' }
+                          status === 'present'
+                            ? { borderColor: '#4CAF50', backgroundColor: 'rgba(76, 175, 80, 0.15)' }
+                            : { borderColor: 'transparent', backgroundColor: '#252525' }
                         ]}
                         onPress={() => markAttendance(s.id, 'present')}
                       >
                         <Text
                           style={[
                             styles.actionButtonText,
-                            status === 'present' && { color: '#4CAF50' }
+                            status === 'present' ? { color: '#4CAF50', fontWeight: 'bold' } : { color: '#666' }
                           ]}
                         >
                           Present
@@ -327,15 +388,16 @@ export default function TeacherDashboard() {
                       <TouchableOpacity
                         style={[
                           styles.actionButton,
-                          status === 'absent' && styles.activeActionButton,
-                          { borderColor: '#D32F2F' }
+                          status === 'absent'
+                            ? { borderColor: '#D32F2F', backgroundColor: 'rgba(211, 47, 47, 0.15)' }
+                            : { borderColor: 'transparent', backgroundColor: '#252525' }
                         ]}
                         onPress={() => markAttendance(s.id, 'absent')}
                       >
                         <Text
                           style={[
                             styles.actionButtonText,
-                            status === 'absent' && { color: '#D32F2F' }
+                            status === 'absent' ? { color: '#D32F2F', fontWeight: 'bold' } : { color: '#666' }
                           ]}
                         >
                           Absent

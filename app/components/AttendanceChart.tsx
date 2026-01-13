@@ -5,7 +5,6 @@ import Svg, { G, Path } from 'react-native-svg';
 interface AttendanceChartProps {
     present: number;
     absent: number;
-    late: number;
     unmarked: number;
 }
 
@@ -16,7 +15,6 @@ const CY = 140; // Center Y is lower so we see the top half
 
 const COLORS = {
     present: '#4CAF50',
-    late: '#FFC107',
     absent: '#F44336',
     unmarked: '#757575',
 };
@@ -29,21 +27,20 @@ const getCoordinates = (percent: number) => {
     return { x, y };
 };
 
-export default function AttendanceChart({ present, absent, late, unmarked }: AttendanceChartProps) {
-    const total = present + absent + late + unmarked;
+export default function AttendanceChart({ present, absent, unmarked }: AttendanceChartProps) {
+    const total = present + absent + unmarked;
 
     // If no data avoid dividing by zero
     const hasData = total > 0;
 
     // Calculate percentages
-    // Order: Present -> Late -> Absent -> Unmarked (Left to Right)
+    // Order: Present -> Absent -> Unmarked (Left to Right)
     // Or whatever order looks best. Present usually first.
 
     const data = [
         { key: 'present', value: present, color: COLORS.present, label: 'Present' },
-        { key: 'late', value: late, color: COLORS.late, label: 'Late' },
         { key: 'absent', value: absent, color: COLORS.absent, label: 'Absent' },
-        { key: 'unmarked', value: unmarked, color: COLORS.unmarked, label: 'Unmarked' },
+        { key: 'unmarked', value: unmarked, color: COLORS.unmarked, label: '' },
     ];
 
     let startPercent = 0;
@@ -107,12 +104,15 @@ export default function AttendanceChart({ present, absent, late, unmarked }: Att
 
             <View style={styles.legendContainer}>
                 {data.map((item) => (
-                    <View key={item.key} style={styles.legendItem}>
-                        <View style={[styles.dot, { backgroundColor: item.color }]} />
-                        <Text style={styles.legendText}>{item.label}: {item.value}</Text>
-                    </View>
+                    item.label ? ( // only render if there's a label
+                        <View key={item.key} style={styles.legendItem}>
+                            <View style={[styles.dot, { backgroundColor: item.color }]} />
+                            <Text style={styles.legendText}>{item.label}: {item.value}</Text>
+                        </View>
+                    ) : null
                 ))}
             </View>
+
         </View>
     );
 }

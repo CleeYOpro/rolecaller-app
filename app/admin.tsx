@@ -153,7 +153,6 @@ export default function Admin() {
     const attendanceStats = React.useMemo(() => {
         let present = 0;
         let absent = 0;
-        let late = 0;
         let unmarked = 0;
 
         students.forEach((student) => {
@@ -161,14 +160,13 @@ export default function Admin() {
                 const status = attendance[student.classId]?.[today]?.[student.id];
                 if (status === 'present') present++;
                 else if (status === 'absent') absent++;
-                else if (status === 'late') late++;
                 else unmarked++;
             } else {
                 unmarked++;
             }
         });
 
-        return { present, absent, late, unmarked };
+        return { present, absent, unmarked };
     }, [students, attendance, today]);
 
     const handleSignOut = () => {
@@ -543,7 +541,6 @@ export default function Admin() {
                                     <AttendanceChart
                                         present={attendanceStats.present}
                                         absent={attendanceStats.absent}
-                                        late={attendanceStats.late}
                                         unmarked={attendanceStats.unmarked}
                                     />
                                 }

@@ -96,6 +96,17 @@ export const attendanceService = {
     }
   },
 
+  deleteAttendance: async (studentId: string, date: string) => {
+    try {
+      await localDb.delete(attendanceLocal)
+        .where(and(eq(attendanceLocal.studentId, studentId), eq(attendanceLocal.date, date)));
+      console.log(`Deleted attendance for ${studentId} on ${date}`);
+    } catch (err) {
+      console.error('DELETE ATTENDANCE ERROR:', err);
+      throw err;
+    }
+  },
+
   // Get attendance — local unsynced first
   getAttendance: async (classId: string, date: string): Promise<Record<string, AttendanceStatus>> => {
     try {
