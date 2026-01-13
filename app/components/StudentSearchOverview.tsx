@@ -174,9 +174,7 @@ export default function StudentSearchOverview({
             <View style={styles.detailsHeader}>
                 <View style={{ flex: 1 }}>
                     <Text style={styles.detailsName}>{selectedStudent?.name}</Text>
-                    <Text style={styles.detailsInfo}>
-                        ID: {selectedStudent?.id} • Grade: {selectedStudent?.grade || 'N/A'}
-                    </Text>
+
                     <Text style={styles.detailsInfo}>
                         Class: {classes.find(c => c.id === selectedStudent?.classId)?.name || 'Unassigned'}
                     </Text>
@@ -255,7 +253,7 @@ export default function StudentSearchOverview({
                     <View style={styles.mobileSearchContainer}>
                         <TextInput
                             style={styles.searchInput}
-                            placeholder="Search by name or ID..."
+                            placeholder="Search by name..."
                             placeholderTextColor="#888"
                             value={searchQuery}
                             onChangeText={setSearchQuery}
@@ -283,7 +281,7 @@ export default function StudentSearchOverview({
                                             >
                                                 <View>
                                                     <Text style={styles.mobileStudentName}>{student.name}</Text>
-                                                    <Text style={styles.mobileStudentId}>ID: {student.id}</Text>
+
                                                 </View>
                                                 <Ionicons name="chevron-forward" size={24} color="#888" />
                                             </TouchableOpacity>

@@ -355,11 +355,14 @@ export default function Admin() {
 
             // Validate required columns
             const nameColIndex = headers.findIndex(h => h.toLowerCase() === 'name');
-            const gradeColIndex = headers.findIndex(h => h.toLowerCase() === 'grade');
+            const gradeColIndex = headers.findIndex(h => {
+                const lower = h.toLowerCase();
+                return lower === 'grade' || lower === 'roll no' || lower === 'roll no.' || lower === 'rollno';
+            });
             const classColIndex = headers.findIndex(h => h.toLowerCase() === 'class');
 
             if (nameColIndex === -1 || gradeColIndex === -1 || classColIndex === -1) {
-                setUploadMessage("❌ CSV must contain columns: Name, Grade, Class");
+                setUploadMessage("❌ CSV must contain columns: Name, Roll No., Class");
                 setUploading(false);
                 return;
             }
@@ -631,7 +634,7 @@ export default function Admin() {
                                         />
                                         <TextInput
                                             style={styles.input}
-                                            placeholder="Grade"
+                                            placeholder="Roll No."
                                             placeholderTextColor="#888"
                                             value={studentGrade}
                                             onChangeText={setStudentGrade}
@@ -657,7 +660,7 @@ export default function Admin() {
                                     <View style={styles.formCard}>
                                         <Text style={styles.formTitle}>Upload Students from CSV</Text>
                                         <Text style={styles.helperText}>
-                                            CSV format: name,standard,class
+                                            CSV format: name,roll no,class
                                         </Text>
                                         <TouchableOpacity
                                             style={styles.uploadButton}
@@ -684,7 +687,7 @@ export default function Admin() {
                                             <View style={styles.tableHeader}>
                                                 <Text style={[styles.tableHeaderText, { flex: 2 }]}>Student</Text>
                                                 <Text style={[styles.tableHeaderText, { flex: 1 }]}>Class</Text>
-                                                <Text style={[styles.tableHeaderText, { flex: 1 }]}>Grade</Text>
+                                                <Text style={[styles.tableHeaderText, { flex: 1 }]}>Roll No.</Text>
                                                 <Text style={[styles.tableHeaderText, { flex: 1, textAlign: 'center' }]}>Actions</Text>
                                             </View>
                                             {students.map((student) => (

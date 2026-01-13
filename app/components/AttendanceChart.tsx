@@ -98,7 +98,7 @@ export default function AttendanceChart({ present, absent, unmarked }: Attendanc
                 </Svg>
                 <View style={styles.totalContainer}>
                     <Text style={styles.totalText}>{total}</Text>
-                    <Text style={styles.totalLabel}>Total</Text>
+                    <Text style={styles.totalLabel}>Day Total</Text>
                 </View>
             </View>
 
